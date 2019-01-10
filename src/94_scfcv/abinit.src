@@ -22,6 +22,7 @@ sources = [
  "m_elpolariz.F90",
  "m_scfcv_core.F90",
  "m_scfcv.F90",
+ "m_subscf.F90",
  "m_outscfcv.F90",
  ]
 # IMPORTANT : please use the alphabetic order in the previous list. Do NOT add the new routine names at the end of the list.

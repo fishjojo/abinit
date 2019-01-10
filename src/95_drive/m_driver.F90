@@ -151,6 +151,7 @@ subroutine driver(codvsn,cpui,dtsets,filnam,filstat,&
  use m_gwls_sternheimer, only : gwls_sternheimer
  use m_nonlinear,        only : nonlinear
  use m_drivexc,          only : echo_xc_name
+ use m_dmfet_driver,     only : dmfet
 
 #if defined HAVE_BIGDFT
  use BigDFT_API,   only: xc_init, xc_end, XC_MIXED, XC_ABINIT,&
@@ -763,6 +764,10 @@ subroutine driver(codvsn,cpui,dtsets,filnam,filstat,&
    case (RUNL_EPH)
      call status(jdtset_status,filstat,iexit,level,'call eph      ')
      call eph(acell,codvsn,dtfil,dtset,pawang,pawrad,pawtab,psps,rprim,xred)
+
+   case (RUNL_DMFET)
+     call status(jdtset_status,filstat,iexit,level,'call dmfet      ')
+     call dmfet(acell,codvsn,dtfil,dtset,mpi_enregs(idtset),pawang,pawrad,pawtab,psps,rprim,xred,wvl)
 
    case default ! Bad value for optdriver
      write(message,'(a,i0,4a)')&
