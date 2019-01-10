@@ -45,6 +45,11 @@ MODULE m_plowannier
  public :: compute_oper_ks2wan
  public :: normalization_plowannier
  public :: print_operwan
+ !Xing
+ public :: oper_to_matrix
+ public :: build_subspace
+ public :: canonical_to_sub
+ public :: compute_oper_ks2sub
 !!***
 
 
@@ -287,7 +292,7 @@ CONTAINS  !=====================================================================
 !! NOTES
 !!
 !! PARENTS
-!!      outscfcv
+!!      m_outscfcv
 !!
 !! CHILDREN
 !!
@@ -687,7 +692,7 @@ end subroutine destroy_orbital
 !! NOTES
 !!
 !! PARENTS
-!!      outscfcv
+!!      m_outscfcv
 !!
 !! CHILDREN
 !!
@@ -790,7 +795,6 @@ subroutine compute_coeff_plowannier(cryst_struc,cprj,dimcprj,dtset,eigen,fermie,
  complex(dpc), allocatable :: zwork(:)
  integer :: lwork,info,whole_diag
 !************************************************************************
-
 ! Internal variables (could be put one day as input variables of ABINIT).
  plowan_computegreen   = 0  !
               ! 0 : do nothing do not compute hybri or dos
@@ -840,7 +844,6 @@ subroutine compute_coeff_plowannier(cryst_struc,cprj,dimcprj,dtset,eigen,fermie,
  !===================================
  prtocc = 0 ! occupations have no meaning for a k-point path so the default is 0
  if(dtset%kptopt>0.and.dtset%plowan_realspace>=1) prtocc = 1  !1 to print the occupation in real space
-
 
  ! Select if computation of interactions is done
  !===================================
@@ -950,7 +953,7 @@ subroutine compute_coeff_plowannier(cryst_struc,cprj,dimcprj,dtset,eigen,fermie,
        write(unt,*) " For k-point"
        write(unt,*)  ikpt
        do iband=wan%bandi_wan,wan%bandf_wan
-         write(unt, '(2i6,4x,f20.15)' ) iband-wan%bandi_wan+1,ikpt,eigen(iband+band_index)*2.d0
+         write(unt, '(2i6,4x,f20.15)' ) iband-wan%bandi_wan+1,ikpt,eigen(iband+band_index)!*2.d0
        end do
        band_index=band_index+nband_k
      end do
@@ -1003,11 +1006,10 @@ subroutine compute_coeff_plowannier(cryst_struc,cprj,dimcprj,dtset,eigen,fermie,
  end do
  !^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-
 !==========================================================================
 !***************** Compute  <Psi|Chi>=\sum_{proja} <Psi|P_a><phi_a|Chi>
 !==========================================================================
-
+ iorder_cprj = 0
 !Allocate temporary cwaveprj storage
  ABI_DATATYPE_ALLOCATE(cwaveprj,(natom,wan%nspinor))
 
@@ -1116,11 +1118,7 @@ subroutine compute_coeff_plowannier(cryst_struc,cprj,dimcprj,dtset,eigen,fermie,
 
  call xmpi_barrier(spaceComm)
 
-
-
  call normalization_plowannier(wan)
-
-
 
 
  !! -------------------------------------------------------------
@@ -1182,10 +1180,6 @@ subroutine compute_coeff_plowannier(cryst_struc,cprj,dimcprj,dtset,eigen,fermie,
   !!   end do
  !!  end do
 !! end do
-
-
-
-
 
    mat_writing = ""
 
@@ -1688,7 +1682,7 @@ subroutine compute_coeff_plowannier(cryst_struc,cprj,dimcprj,dtset,eigen,fermie,
 &   ' == For each k-point of the path, gives the eigenvalues (in eV) of the Hamiltonian in the Wannier basis'
    call wrtout(std_out,message,'COLL') ; call wrtout(ab_out,message,'COLL')
    write(message,'(2a,f13.4,a)') ch10,&
-&   '   (The band structure is shifted by fermie =',fermie*27.211,' eV )'
+&   '   (The band structure is shifted by fermie =',fermie*27.21138,' eV )'
    call wrtout(std_out,message,'COLL') ; call wrtout(ab_out,message,'COLL')
 
    write(message,'(a,i10)')  ' == Number of atoms                             ',wan%natom_wan
@@ -1711,8 +1705,8 @@ subroutine compute_coeff_plowannier(cryst_struc,cprj,dimcprj,dtset,eigen,fermie,
          write(mat_writing_out,'(i0)') ikpt
          do l1 = 1,wan%nbl_atom_wan(iatom1)
            do m1 = 1,2*wan%latom_wan(iatom1)%lcalc(l1)+1
-             write (mat_writing2,'(F25.7)') 27.2107*real(operwan(ikpt,iatom1,iatom1)%atom(l1,l1)%matl(m1,m1,1,1,1))
-             write (mat_writing2_out,'(F12.3)') 27.2107*real(operwan(ikpt,iatom1,iatom1)%atom(l1,l1)%matl(m1,m1,1,1,1))
+             write (mat_writing2,'(F25.7)') 27.21138*real(operwan(ikpt,iatom1,iatom1)%atom(l1,l1)%matl(m1,m1,1,1,1))
+             write (mat_writing2_out,'(F12.3)') 27.21138*real(operwan(ikpt,iatom1,iatom1)%atom(l1,l1)%matl(m1,m1,1,1,1))
              mat_writing = trim(mat_writing)//trim(mat_writing2)
              mat_writing_out = trim(mat_writing_out)//trim(mat_writing2_out)
            end do
@@ -1744,7 +1738,7 @@ subroutine compute_coeff_plowannier(cryst_struc,cprj,dimcprj,dtset,eigen,fermie,
            write(mat_writing,'(i0)') ikpt
            do l1 = 1,wan%nbl_atom_wan(iatom1)
              do m1 = 1,2*wan%latom_wan(iatom1)%lcalc(l1)+1
-               write (mat_writing2,'(F12.7)') 27.2107*real(operwan(ikpt,iatom1,iatom1)%atom(l1,l1)%matl(m1,m1,isppol,1,1))
+               write (mat_writing2,'(F12.7)') 27.21138*real(operwan(ikpt,iatom1,iatom1)%atom(l1,l1)%matl(m1,m1,isppol,1,1))
                mat_writing = trim(mat_writing)//trim(mat_writing2)
              end do
            end do
@@ -1978,7 +1972,7 @@ subroutine compute_coeff_plowannier(cryst_struc,cprj,dimcprj,dtset,eigen,fermie,
        end do
      end do
    end do
-   write(std_out,*) "energies", energies*27.211
+   write(std_out,*) "energies", energies*27.21138
 
    ! Loop over frequency
    !----------------------
@@ -2186,7 +2180,7 @@ end subroutine compute_coeff_plowannier
 !! OUTPUT
 !!
 !! PARENTS
-!!      outscfcv
+!!      m_outscfcv
 !!
 !! CHILDREN
 !!
@@ -2928,6 +2922,519 @@ end do
   close(unt)
 
 end subroutine print_operwan
+
+
+
+!Begin Xing's routines
+subroutine oper_to_matrix(wan,operwan,mat)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'oper_to_matrix'
+!End of the abilint section
+
+  implicit none
+
+  type(operwan_type),intent(in) :: operwan(:,:,:)
+  type(plowannier_type), intent(in) :: wan
+  real(dp), intent(out) :: mat(:,:,:,:)
+
+  integer :: isppol,ikpt,index_l,iatom1,il1,im1,index_c,iatom2,il2,im2
+
+  !transform operwan to a matrix
+  do isppol = 1,wan%nsppol
+     do ikpt = 1,wan%nkpt
+       mat = czero
+       index_l = 0
+       do iatom1 = 1,wan%natom_wan
+         do il1 = 1,wan%nbl_atom_wan(iatom1)
+           do im1 = 1,2*wan%latom_wan(iatom1)%lcalc(il1)+1
+             index_l = index_l + 1 ! the line changes
+             index_c = 1 ! index_c is set to one each time the line changes
+             do iatom2 = 1,wan%natom_wan
+               do il2 = 1,wan%nbl_atom_wan(iatom2)
+                 do im2 = 1,2*wan%latom_wan(iatom2)%lcalc(il2)+1
+                   mat(index_l,index_c,ikpt,isppol) = real(operwan(ikpt,iatom1,iatom2)%atom(il1,il2)%matl(im1,im2,isppol,1,1))
+                   index_c = index_c + 1
+                 end do !im2
+               end do !il2
+             end do ! iatom2 (the line changes)
+           end do ! im1
+         end do ! il1
+       end do ! iatom1
+     end do ! ikpt
+  end do ! isppol
+
+end subroutine oper_to_matrix
+
+
+subroutine test_unitary(wan,mat,matT,ikpt)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'test_unitary'
+!End of the abilint section
+
+  implicit none
+
+  type(plowannier_type), intent(in) :: wan
+  complex(dpc), intent(out) :: mat(:,:,:)
+  complex(dpc), intent(out) :: matT(:,:,:)
+  integer, intent(in) :: ikpt
+
+  integer :: index_l,index_c,isppol,iatom1,iatom2,il1,il2,im1,im2,iband1,iband2
+
+!UU^{\dagger}
+
+  mat = czero
+  index_l = 0
+  do isppol = 1,wan%nsppol
+    do iatom1 = 1,wan%natom_wan
+      do il1 = 1,wan%nbl_atom_wan(iatom1)
+        do im1 = 1,2*wan%latom_wan(iatom1)%lcalc(il1)+1
+          index_l = index_l + 1
+          index_c = 1 
+          do iatom2 = 1,wan%natom_wan
+            do il2 = 1,wan%nbl_atom_wan(iatom2)
+              do im2 = 1,2*wan%latom_wan(iatom2)%lcalc(il2)+1
+                 !!sum over the bands
+                 do iband1 = 1,wan%bandf_wan-wan%bandi_wan+1
+                    mat(index_l,index_c,isppol)=mat(index_l,index_c,isppol)&
+                 &  +conjg(wan%psichi(ikpt,iband1,iatom2)%atom(il2)%matl(im2,isppol,1))&
+                 &  *wan%psichi(ikpt,iband1,iatom1)%atom(il1)%matl(im1,isppol,1)
+                 end do
+                 index_c = index_c + 1
+              end do
+            end do
+          end do
+        end do
+      end do
+    end do
+  end do
+
+!U^{\dagger}U
+
+  matT = czero
+  do isppol = 1,wan%nsppol
+    do iband1 = 1,wan%bandf_wan-wan%bandi_wan+1
+      do iband2 = 1,wan%bandf_wan-wan%bandi_wan+1
+        !!sum over LM
+        do iatom1 = 1,wan%natom_wan
+          do il1 = 1,wan%nbl_atom_wan(iatom1)
+            do im1 = 1,2*wan%latom_wan(iatom1)%lcalc(il1)+1
+               matT(iband1,iband2,isppol) = matT(iband1,iband2,isppol) &
+            &  +conjg(wan%psichi(ikpt,iband1,iatom1)%atom(il1)%matl(im1,isppol,1))&
+            &  *wan%psichi(ikpt,iband2,iatom1)%atom(il1)%matl(im1,isppol,1)
+            end do
+          end do
+        end do
+      end do
+    end do
+  end do
+
+end subroutine test_unitary
+
+
+subroutine build_subspace(onedm,loc2sub,occ,dim_imp,dim_all,dim_sub,n_full)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'build_subspace'
+!End of the abilint section
+
+  implicit none
+
+  real(dp), intent(in) :: onedm(:,:,:,:)
+  real(dp), intent(out) :: loc2sub(:,:)
+  integer, intent(in) :: dim_imp, dim_all
+  integer, intent(out) :: dim_sub, n_full
+  real(dp), intent(out) :: occ(:)
+
+  real(dp), external :: ddot
+
+  real(dp), allocatable :: imp_dm(:,:), imp_occ(:), imp_occ_srt(:), work(:)
+  real(dp), allocatable :: bath_dm(:,:), bath_occ(:), bath_occ_srt(:)
+
+  integer :: lwork,info
+  integer :: dim_bath
+  integer :: i, index_a, index_b, n_full_imp, n_full_bath
+  real(dp) :: tmp
+  integer, allocatable :: arg_imp(:), arg_bath(:)
+
+  ABI_ALLOCATE(imp_dm,(dim_imp,dim_imp))
+  imp_dm(:,:) = onedm(1:dim_imp,1:dim_imp,1,1)
+
+  ABI_ALLOCATE(imp_occ,(dim_imp))
+
+  lwork = 6*dim_imp
+  ABI_ALLOCATE(work,(lwork))
+
+  call dsyev ('V','L',dim_imp,imp_dm,dim_imp,imp_occ,work,lwork,info)       
+  ABI_DEALLOCATE(work)
+
+  !sort eigenvalues
+  ABI_ALLOCATE(imp_occ_srt,(dim_imp))
+  do i=1,dim_imp
+    imp_occ_srt(i) = max(-imp_occ(i), imp_occ(i)-2.0)
+  enddo
+
+  ABI_ALLOCATE(arg_imp,(dim_imp))
+  call dsortp(imp_occ_srt,1,dim_imp,arg_imp)
+  do i=1,dim_imp
+    imp_occ_srt(i) = imp_occ(arg_imp(i))
+  enddo 
+
+  write(ab_out,*) "debug: imp_occ"
+  write(ab_out,*) imp_occ_srt(:)
+
+
+!bath
+  dim_bath = dim_all-dim_imp
+  ABI_ALLOCATE(bath_dm,(dim_bath,dim_bath))
+  bath_dm(:,:) = onedm(dim_imp+1:dim_all,dim_imp+1:dim_all,1,1)
+
+  ABI_ALLOCATE(bath_occ,(dim_bath))
+
+  lwork = 6*dim_bath
+  ABI_ALLOCATE(work,(lwork))
+
+  call dsyev ('V','L',dim_bath,bath_dm,dim_bath,bath_occ,work,lwork,info)
+  ABI_DEALLOCATE(work)
+
+  !sort eigenvalues
+  ABI_ALLOCATE(bath_occ_srt,(dim_bath))
+  do i=1,dim_bath
+    bath_occ_srt(i) = max(-bath_occ(i), bath_occ(i)-2.0)
+  enddo
+
+  ABI_ALLOCATE(arg_bath,(dim_bath))
+  call dsortp(bath_occ_srt,1,dim_bath,arg_bath)
+  do i=1,dim_bath
+    bath_occ_srt(i) = bath_occ(arg_bath(i))
+  enddo
+
+  write(ab_out,*) "debug: bath_occ"
+  write(ab_out,*) bath_occ_srt(:)
+
+
+  dim_sub = 0
+  do i=1,min(dim_imp,dim_bath)
+    tmp = imp_occ_srt(i) + bath_occ_srt(i)
+    if(tmp.lt.2.01 .and. tmp.gt.1.99) then !a pair of entangled orbitals
+       dim_sub = dim_sub + 1
+    else
+       exit
+    endif
+  enddo
+
+  occ(1:dim_sub) = imp_occ_srt(1:dim_sub)
+  occ(dim_sub+1:2*dim_sub) = bath_occ_srt(1:dim_sub)
+
+  loc2sub = zero
+  do i=1,dim_sub
+    loc2sub(1:dim_imp,i) = imp_dm(:,arg_imp(i))
+    loc2sub(dim_imp+1:dim_all,dim_sub+i) = bath_dm(:,arg_bath(i))
+  enddo
+
+  n_full_imp = 0
+  n_full_bath = 0
+
+  index_a = 0
+  index_b = 0
+  do i=dim_sub+1,dim_imp
+    if(imp_occ_srt(i).gt.0.01)then !fully occupied
+      index_a = index_a + 1
+      occ(2*dim_sub+index_a) = imp_occ_srt(i)
+      loc2sub(1:dim_imp,2*dim_sub+index_a) = imp_dm(:,arg_imp(i))
+      n_full_imp = n_full_imp + 1
+    else !empty
+      occ(dim_all-index_b) = imp_occ_srt(i)
+      loc2sub(1:dim_imp,dim_all-index_b) = imp_dm(:,arg_imp(i))
+      index_b = index_b + 1
+    endif
+  enddo 
+
+  do i=dim_sub+1,dim_bath
+    if(bath_occ_srt(i).gt.0.01)then !fully occupied
+      index_a = index_a + 1
+      occ(2*dim_sub+index_a) = bath_occ_srt(i)
+      loc2sub(dim_imp+1:dim_all,2*dim_sub+index_a) = bath_dm(:,arg_bath(i))
+      n_full_bath = n_full_bath + 1
+    else !empty
+      occ(dim_all-index_b) = bath_occ_srt(i)
+      loc2sub(dim_imp+1:dim_all,dim_all-index_b) = bath_dm(:,arg_bath(i))
+      index_b = index_b + 1
+    endif
+  enddo
+
+  dim_sub = dim_sub * 2
+  n_full = n_full_imp + n_full_bath
+
+  write(ab_out,*) "debug: occ"
+  write(ab_out,*) occ
+
+  !normalize loc2sub
+  do i=1,dim_all
+    tmp = ddot(dim_all,loc2sub(:,i),1,loc2sub(:,i),1)
+    tmp = 1.0/dsqrt(tmp)
+    call dscal(dim_all,tmp,loc2sub(:,i),1)
+  enddo
+
+  ABI_DEALLOCATE(imp_occ)
+  ABI_DEALLOCATE(imp_occ_srt)
+  ABI_DEALLOCATE(imp_dm)
+  ABI_DEALLOCATE(bath_occ)
+  ABI_DEALLOCATE(bath_occ_srt)
+  ABI_DEALLOCATE(bath_dm)
+  ABI_DEALLOCATE(arg_imp)
+  ABI_DEALLOCATE(arg_bath)
+
+end subroutine build_subspace
+
+
+subroutine canonical_to_sub(wan,loc2sub,can2sub,nsub,ikpt,isppol)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'canonical_to_sub'
+!End of the abilint section
+
+  implicit none
+
+  type(plowannier_type), intent(in) :: wan
+  real(dp),intent(in) :: loc2sub(:,:)
+  integer,intent(in) :: nsub, ikpt, isppol
+  complex(dpc),intent(out) :: can2sub(:,:)
+
+  integer :: iband1,isub,index_l,iatom1,il1,im1,nband
+
+  nband = wan%bandf_wan-wan%bandi_wan+1
+  can2sub = czero
+  do iband1 = 1,nband
+    do isub = 1,nsub
+      index_l = 0
+      do iatom1 = 1,wan%natom_wan
+        do il1 = 1,wan%nbl_atom_wan(iatom1)
+          do im1 = 1,2*wan%latom_wan(iatom1)%lcalc(il1)+1
+             index_l = index_l + 1
+             can2sub(iband1,isub)=can2sub(iband1,isub)&
+          &  +conjg(wan%psichi(ikpt,iband1,iatom1)%atom(il1)%matl(im1,isppol,1))&
+          &  *loc2sub(index_l,isub)
+          end do
+        end do
+      end do
+    end do
+  end do
+
+end subroutine canonical_to_sub
+
+
+subroutine compute_oper_ks2sub(operks,opersub,can2sub,nband,nsub)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'compute_oper_ks2sub'
+!End of the abilint section
+
+  implicit none
+
+  integer,intent(in) :: nband, nsub
+  complex(dpc),intent(in) :: can2sub(:,:)
+  complex(dpc), intent(in) :: operks(:,:)
+  complex(dpc), intent(out) :: opersub(:,:)
+
+  complex(dpc), allocatable :: tmp(:,:)
+
+  ABI_ALLOCATE(tmp,(nband,nsub))
+  tmp = czero
+  opersub =  czero
+  call zgemm('N','N',nband,nsub,nband,cone,operks,nband,can2sub,nband,czero,tmp,nband)
+  call zgemm('C','N',nsub,nsub,nband,cone,can2sub,nband,tmp,nband,czero,opersub,nsub)
+
+  ABI_DEALLOCATE(tmp)
+
+end subroutine compute_oper_ks2sub
+
+
+subroutine DSORTP (A, M, N, P)
+! Copyright (c) 1996 California Institute of Technology, Pasadena, CA.
+! ALL RIGHTS RESERVED.
+! Based on Government Sponsored Research NAS7-03001.
+!>> 1995-11-15 DSORTP  Krogh  SFTRAN => Fortran, removed mult. entry.
+!>> 1994-10-19 DSORTP  Krogh  Changes to use M77CON
+!>> 1992-11-23 DSORTP  Snyder  Add entry DSORTQ.
+!>> 1991-04-02 DSORTP  Snyder  Repair no permutation vector if m-n < 10
+!>> 1988-11-22 DSORTP  Snyder  Initial code.
+!--D replaces "?": ?SORTP, ?SORTQ
+!
+!     Sort the M:N-vector A.
+!     A is not disturbed.  P is set so that A(P(J)) is the J'th element
+!     of the sorted sequence.
+!     Enter at DSORTQ to use pre-specified permutation vector.
+!
+!     To sort an array A' into descending order, let A = -A'
+!     To sort an array A' into ascending order according to the
+!     absolute value of the elements let A = ABS(A').
+!     To sort an array A' into decending order according to the
+!     absolute value of the elements let A = -ABS(A').
+!
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'DSORTP'
+!End of the abilint section
+
+      integer M, N, P(*)
+!--D Next line special: I
+      double precision A(*)
+      integer CL
+!                      Get permutation vector for sorting
+      do 20 cl = m, n
+         p(cl)=cl
+   20 continue
+      call DSORTQ (A, M, N, P)
+      return
+      end subroutine DSORTP
+
+      subroutine DSORTQ (A, M, N, P)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'DSORTQ'
+!End of the abilint section
+
+      integer M, N
+!c--D Next line special: I
+      double precision A(*)
+      integer P(*)
+!c
+!c     *****     Local Variables     ************************************
+!c
+!c BL      is the left bound of the sub-array to be sorted at the next
+!c         step.
+!c BR      is the right bound of the sub-array to be sorted at the next
+!c         step.
+!c CL      is the current left bound of the unsorted sub-array.
+!c CR      is the current right bound of the unsorted sub-array.
+!c PARTN   is the partition element.
+!c PTEMP   holds elements of P during exchanges.
+!c STACKL  keeps track of the left bounds of sub-arrays waiting to be
+!c         sorted.
+!c STACKR  keeps track of the right bounds of sub-arrays waiting to be
+!c         sorted.
+!c STKTOP  keeps track of the top of the stacks.
+!c
+      integer BL,BR,CL,CR
+!c--D Next line special: I
+      double precision PARTN
+      integer PTEMP,STACKL(32),STACKR(32),STKTOP
+!c
+!c     *****     Executable Statements     ******************************
+!c
+      if (n-m.ge.10) then
+         stktop=1
+         stackl(1)=m
+         stackr(1)=n
+   40    continue
+            bl=stackl(stktop)
+            br=stackr(stktop)
+            stktop=stktop-1
+!c           Choose a partitioning element.  Use the median of the first,
+!c           middle and last elements.  Sort them so the extreme elements
+!c           can serve as sentinels during partitioning.
+            cl=(bl+br)/2
+            ptemp=p(cl)
+            if (a(p(bl)).gt.a(ptemp)) then
+               p(cl)=p(bl)
+               p(bl)=ptemp
+               ptemp=p(cl)
+            end if
+            if (a(p(bl)).gt.a(p(br))) then
+               cr=p(bl)
+               p(bl)=p(br)
+               p(br)=cr
+            end if
+            if (a(ptemp).gt.a(p(br))) then
+               p(cl)=p(br)
+               p(br)=ptemp
+               ptemp=p(cl)
+            end if
+            p(cl)=p(br-1)
+            p(br-1)=ptemp
+            partn=a(ptemp)
+!c           Partition the sub-array around PARTN.  Exclude the above
+!c           considered elements from partitioning because they're al-
+!c           ready in the correct subfiles.  Stop scanning on equality to
+!c           prevent files containing equal values from causing a loop.
+            cl=bl
+            cr=br-1
+   80       continue
+  100          cl=cl+1
+               if (a(p(cl)) .lt. partn) go to 100
+  120          cr=cr-1
+               if (a(p(cr)) .gt. partn) go to 120
+               if (cl.gt.cr) go to 150
+               ptemp=p(cl)
+               p(cl)=p(cr)
+               p(cr)=ptemp
+               go to 80
+  150       continue
+!c           Put sub-arrays on the stack if they're big enough.  Put the
+!c           larger under the smaller, so the smaller will be done next.
+!c           This makes the upper bound of the stack depth log2 (n-m+1).
+!c           (The "Hibbard" modification of quicksort).
+            if (cl-bl .gt. br-cr) then
+               if (cl-bl.gt.10) then
+                  stktop=stktop+1
+                  stackl(stktop)=bl
+                  stackr(stktop)=cr
+               end if
+               if (br-cr.gt.10) then
+                  stktop=stktop+1
+                  stackl(stktop)=cl
+                  stackr(stktop)=br
+               end if
+            else
+               if (br-cr.gt.10) then
+                  stktop=stktop+1
+                  stackl(stktop)=cl
+                  stackr(stktop)=br
+               end if
+               if (cl-bl.gt.10) then
+                  stktop=stktop+1
+                  stackl(stktop)=bl
+                  stackr(stktop)=cr
+               end if
+            end if
+         if (stktop .ne.0) go to 40
+      end if
+!c     Clean up small subfiles using insertion sort on everything.
+      do 200 cr = m+1, n
+         ptemp=p(cr)
+         partn=a(ptemp)
+         cl=cr
+  180    if (a(p(cl-1)) .gt. partn) then
+            p(cl)=p(cl-1)
+            cl=cl-1
+            if (cl .gt. m) go to 180
+         end if
+         p(cl)=ptemp
+  200 continue
+      return
+end subroutine DSORTQ
 
 END MODULE m_plowannier
 !!***

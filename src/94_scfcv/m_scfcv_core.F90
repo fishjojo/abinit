@@ -123,6 +123,7 @@ module m_scfcv_core
 !!***
 
  public :: scfcv_core
+ public :: etotfor !Xing
 !!***
 
 contains
