@@ -20,8 +20,8 @@
 
 #include "abi_common.h"
 
-
 module m_dmfet_oep
+ 
 
  use defs_basis
  use defs_datatypes
@@ -95,8 +95,20 @@ subroutine oep_run(this)
 
  implicit none
 
+ include 'nlopt.f'
+
  type(oep_type),intent(inout) :: this
 
+ integer*8 opt  !pointer to the opt object
+ integer algorithm, n
+
+ opt = 0
+ algorithm = NLOPT_LD_LBFGS !temporarily hard coded
+ n = this%dimP
+
+ call nlo_create(opt, algorithm, n)
+
+ call nlo_destroy(opt)
 
 end subroutine oep_run
 
