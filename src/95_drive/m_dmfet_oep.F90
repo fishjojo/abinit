@@ -112,7 +112,7 @@ subroutine oep_run(this)
  n = dimP*(dimP+1)/2
 
  ABI_ALLOCATE(x,(n))
- mat2vec(x,this%V_emb,dimP)
+ call mat2vec(x,this%V_emb,dimP)
 
  call nlo_create(opt, algorithm, n)
 
@@ -163,8 +163,8 @@ subroutine vec2mat(vec,mat,n)
 !End of the abilint section
 
  integer,intent(in) :: n
- real(dp),intent(in) :: mat(n,n)
- real(dp),intent(out) :: vec(n*(n+1)/2)
+ real(dp),intent(out) :: mat(n,n)
+ real(dp),intent(in) :: vec(n*(n+1)/2)
  integer :: i,j,k
 
  k=1
@@ -196,7 +196,7 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, f_data)
  real(dp) :: f, x(n), grad(n)
  type(oep_type),intent(inout) :: f_data
 
- vec2mat(x,f_data%V_emb,f_data%dimP)
+ call vec2mat(x,f_data%V_emb,f_data%dimP)
 
 
  !imp scf
