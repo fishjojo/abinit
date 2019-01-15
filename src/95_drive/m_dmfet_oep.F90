@@ -100,18 +100,119 @@ subroutine oep_run(this)
  type(oep_type),intent(inout) :: this
 
  integer*8 opt  !pointer to the opt object
- integer algorithm, n
+ integer algorithm, n, ires
+ integer i,j,k,dimP
+
+ real(dp) :: minf, tol
+ real(dp),allocatable :: x(:)
 
  opt = 0
  algorithm = NLOPT_LD_LBFGS !temporarily hard coded
- n = this%dimP
+ dimP = this%dimP
+ n = dimP*(dimP+1)/2
+
+ ABI_ALLOCATE(x,(n))
+ mat2vec(x,this%V_emb,dimP)
 
  call nlo_create(opt, algorithm, n)
+
+ tol = 1.d-5
+ call nlo_set_ftol_abs(ires, opt, tol)
+
+ call nlo_set_max_objective(ires, opt, cost_wuyang, this)
+
+ call nlo_optimize(ires, opt, x, minf)
 
  call nlo_destroy(opt)
 
 end subroutine oep_run
 
+
+subroutine mat2vec(vec,mat,n)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'mat2vec'
+!End of the abilint section
+
+ integer,intent(in) :: n
+ real(dp),intent(in) :: mat(n,n)
+ real(dp),intent(out) :: vec(n*(n+1)/2)
+ integer :: i,j,k
+
+ k=1
+ do j=1,n
+   do i=j,n
+     vec(k) = mat(i,j) !lower triangle
+     k=k+1
+   enddo
+ enddo
+
+end subroutine mat2vec
+
+
+subroutine vec2mat(vec,mat,n)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'vec2mat'
+!End of the abilint section
+
+ integer,intent(in) :: n
+ real(dp),intent(in) :: mat(n,n)
+ real(dp),intent(out) :: vec(n*(n+1)/2)
+ integer :: i,j,k
+
+ k=1
+ do j=1,n
+   do i=j,n
+     mat(i,j) = vec(k) !lower triangle
+     mat(j,i) = mat(i,j)
+     k=k+1
+   enddo
+ enddo
+
+end subroutine vec2mat
+
+
+
+subroutine cost_wuyang(f, n, x, grad, need_gradient, f_data)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'cost_wuyang'
+!End of the abilint section
+
+ implicit none
+     
+ integer n,need_gradient
+ integer i
+ real(dp) :: f, x(n), grad(n)
+ type(oep_type),intent(inout) :: f_data
+
+ vec2mat(x,f_data%V_emb,f_data%dimP)
+
+
+ !imp scf
+
+ !bath scf
+
+ !f=e_imp+e_bath
+
+ if (need_gradient.ne.0) then
+   !compute gradient
+
+   !grad = P_imp + P_bath - P_ref
+ endif
+
+ 
+end subroutine cost_wuyang
 
 
 
