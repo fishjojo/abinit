@@ -736,6 +736,7 @@ subroutine dtset_copy(dtout, dtin)
  dtout%nspinor            = dtin%nspinor
  dtout%nsppol             = dtin%nsppol
  dtout%nstep              = dtin%nstep
+ dtout%nsubsys            = dtin%nsubsys
  dtout%nsym               = dtin%nsym
  dtout%ntime              = dtin%ntime
  dtout%ntimimage          = dtin%ntimimage
@@ -1133,6 +1134,10 @@ subroutine dtset_copy(dtout, dtin)
 
  call alloc_copy( dtin%so_psp, dtout%so_psp)
 
+ call alloc_copy( dtin%subsys_iatom, dtout%subsys_iatom)
+
+ call alloc_copy( dtin%subsys_natom, dtout%subsys_natom)
+
  call alloc_copy( dtin%symafm, dtout%symafm)
 
  call alloc_copy( dtin%symrel, dtout%symrel)
@@ -1347,6 +1352,12 @@ subroutine dtset_free(dtset)
  end if
  if (allocated(dtset%so_psp))      then
    ABI_DEALLOCATE(dtset%so_psp)
+ end if
+ if (allocated(dtset%subsys_iatom))     then
+   ABI_DEALLOCATE(dtset%subsys_iatom)
+ end if
+ if (allocated(dtset%subsys_natom))     then
+   ABI_DEALLOCATE(dtset%subsys_natom)
  end if
  if (allocated(dtset%symafm))      then
    ABI_DEALLOCATE(dtset%symafm)
@@ -2488,7 +2499,7 @@ subroutine chkvars (string)
  list_vars=trim(list_vars)//' npfft nphf nph1l npimage npkpt nppert npsp npspinor'
  list_vars=trim(list_vars)//' npulayit npvel npwkss'
  list_vars=trim(list_vars)//' np_slk nqpt nqptdm nscforder nshiftk nshiftq nqshft'
- list_vars=trim(list_vars)//' nspden nspinor nsppol nstep nsym'
+ list_vars=trim(list_vars)//' nspden nspinor nsppol nstep nsubsys nsym'
  list_vars=trim(list_vars)//' ntime ntimimage ntypalch ntypat nucdipmom nwfshist nzchempot'
 !O
  list_vars=trim(list_vars)//' objaat objbat objaax objbax objan objbn objarf'
@@ -2540,7 +2551,7 @@ subroutine chkvars (string)
  list_vars=trim(list_vars)//' spin_n1l spin_n2l spin_qpoint spin_temperature spin_tolavg spin_tolvar'
  list_vars=trim(list_vars)//' spinat spinmagntarget spmeth'
  list_vars=trim(list_vars)//' spnorbscl stmbias strfact string_algo strprecon strtarget'
- list_vars=trim(list_vars)//' supercell_latt symafm symchi symdynmat symmorphi symrel symsigma'
+ list_vars=trim(list_vars)//' subsys_iatom subsys_natom supercell_latt symafm symchi symdynmat symmorphi symrel symsigma'
 !T
  list_vars=trim(list_vars)//' td_maxene td_mexcit tfkinfunc temperature tfw_toldfe tim1rev timopt tl_nprccg tl_radius'
  list_vars=trim(list_vars)//' tmesh tnons toldfe tolmxde toldff tolimg tolmxf tolrde tolrff tolsym'

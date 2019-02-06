@@ -3284,6 +3284,16 @@ subroutine invars2(bravais,dtset,iout,jdtset,lenstr,&
    MSG_ERROR(sjoin("wfk_task must be specified when optdriver=",itoa(dtset%optdriver)))
  end if
 
+ !DMFET
+ if(dtset%nsubsys>0) then
+   call intagm(dprarr,intarr,jdtset,marr,dtset%nsubsys,string(1:lenstr),'subsys_natom',tread,'INT')
+   if(tread==1) dtset%subsys_natom(1:dtset%nsubsys)=intarr(1:dtset%nsubsys)
+
+   call intagm(dprarr,intarr,jdtset,marr,dtset%natom,string(1:lenstr),'subsys_iatom',tread,'INT')
+   if(tread==1) dtset%subsys_iatom(1:dtset%natom)=intarr(1:dtset%natom)
+ end if
+
+
  ABI_DEALLOCATE(intarr)
  ABI_DEALLOCATE(dprarr)
 

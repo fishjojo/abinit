@@ -1094,6 +1094,9 @@ subroutine outvar_i_n (dtsets,iout,&
  intarr(1,:)=dtsets(:)%nstep
  call prttagm(dprarr,intarr,iout,jdtset_,2,marr,1,narrm,ncid,ndtset_alloc,'nstep','INT',0)
 
+ intarr(1,:)=dtsets(:)%nsubsys
+ call prttagm(dprarr,intarr,iout,jdtset_,2,marr,1,narrm,ncid,ndtset_alloc,'nsubsys','INT',0)
+
  intarr(1,:)=dtsets(:)%nsym
  call prttagm(dprarr,intarr,iout,jdtset_,2,marr,1,narrm,ncid,ndtset_alloc,'nsym','INT',0)
 

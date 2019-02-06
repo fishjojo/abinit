@@ -260,6 +260,7 @@ subroutine invars0(dtsets,istatr,istatshft,lenstr,&
  dtsets(:)%userre=zero
  dtsets(:)%usewvl = 0
  dtsets(:)%plowan_compute=0
+ dtsets(:)%nsubsys=0
 
 !Loop on datasets, to find natom and mxnatom, as well as useri and userr
  do idtset=1,ndtset_alloc
@@ -363,6 +364,9 @@ subroutine invars0(dtsets,istatr,istatshft,lenstr,&
 ! Read plowan_compute
    call intagm(dprarr,intarr,jdtset,marr,1,string(1:lenstr),'plowan_compute',tread,'INT')
    if(tread==1) dtsets(idtset)%plowan_compute=intarr(1)
+
+   call intagm(dprarr,intarr,jdtset,marr,1,string(1:lenstr),'nsubsys',tread,'INT')
+   if(tread==1) dtsets(idtset)%nsubsys=intarr(1)
 
    call intagm(dprarr,intarr,jdtset,marr,1,string(1:lenstr),'useria',tread,'INT')
    if(tread==1) dtsets(idtset)%useria=intarr(1)
@@ -544,6 +548,10 @@ subroutine invars0(dtsets,istatr,istatshft,lenstr,&
    ABI_ALLOCATE(dtsets(idtset)%xred_orig,(3,mxnatom,mxnimage))
    ABI_ALLOCATE(dtsets(idtset)%ziontypat,(mxntypat))
    ABI_ALLOCATE(dtsets(idtset)%znucl,(npsp))
+   !if(dtsets(idtset)%nsubsys.gt.0) then !Xing
+   ABI_ALLOCATE(dtsets(idtset)%subsys_iatom,(mxnatom))
+   ABI_ALLOCATE(dtsets(idtset)%subsys_natom,(10))
+   !endif
  end do
 
 !DEBUG
@@ -1955,6 +1963,7 @@ subroutine invars1(bravais,dtset,iout,jdtset,lenstr,mband_upper,msym,npsp1,&
  call intagm(dprarr,intarr,jdtset,marr,1,string(1:lenstr),'macro_uj',tread,'INT')
  if(tread==1) dtset%macro_uj=intarr(1)
 
+
  ABI_DEALLOCATE(nband)
  ABI_DEALLOCATE(ratsph)
  ABI_DEALLOCATE(intarr)
@@ -2671,6 +2680,10 @@ subroutine indefo(dtsets,ndtset_alloc,nprocs)
    dtsets(idtset)%string_algo=1
    dtsets(idtset)%strprecon=one
    dtsets(idtset)%strtarget(1:6)=zero
+   if(dtsets(idtset)%nsubsys>0)then
+     dtsets(idtset)%subsys_iatom(:)=0
+     dtsets(idtset)%subsys_natom(:)=0
+   endif
    dtsets(idtset)%symchi=1
    dtsets(idtset)%symsigma=0
 !  T

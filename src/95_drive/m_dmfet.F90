@@ -29,7 +29,7 @@ module m_dmfet
  use defs_datatypes
  use defs_abitypes
 
- use m_crystal,          only : crystal_t
+ use m_crystal,          only : crystal_t,crystal_init,crystal_print
  use defs_wvltypes,      only : wvl_data
  use m_plowannier
 
@@ -40,6 +40,7 @@ module m_dmfet
  use m_pawfgr,           only : pawfgr_type
  use m_pawcprj,          only : pawcprj_type, pawcprj_getdim, pawcprj_alloc,pawcprj_free
  use m_pawrad,           only : pawrad_type
+ use m_dtset,            only : dtset_copy
 
  use m_dmfet_oep
  use m_gstate_sub
@@ -52,6 +53,7 @@ module m_dmfet
  public :: dmfet_init
  public :: dmfet_run
  public :: destroy_dmfet
+
 
  type, public :: dmfet_type
 
@@ -72,6 +74,7 @@ module m_dmfet
    type(pawrad_type), pointer :: pawrad(:) => null()
    type(pawang_type),pointer :: pawang => null()
 
+   real(dp), pointer :: acell(:)=>null()
    real(dp), pointer :: ylm(:,:) => null()
    real(dp), pointer :: ylmgr(:,:,:) => null()
 
@@ -112,7 +115,7 @@ contains
 !! CHILDREN
 !!
 !! SOURCE
-subroutine dmfet_init(this,crystal,dtfil,dtset,psps,mpi_enreg,&
+subroutine dmfet_init(this,acell,crystal,dtfil,dtset,psps,mpi_enreg,&
 & kg,nfftf,pawtab,pawrad,pawang,pawfgr,npwarr,ylm,ylmgr,mcg,cg,eigen,occ,e_fermie,ecore,wvl)
 
 
@@ -132,6 +135,7 @@ subroutine dmfet_init(this,crystal,dtfil,dtset,psps,mpi_enreg,&
  type(MPI_type),intent(in),target :: mpi_enreg
  type(wvl_data),intent(in),target :: wvl !useless
  integer, intent(in),target :: npwarr(dtset%nkpt)
+ real(dp),intent(in),target :: acell(3)
 
  type(pawfgr_type),intent(in),target :: pawfgr
 
@@ -156,6 +160,7 @@ subroutine dmfet_init(this,crystal,dtfil,dtset,psps,mpi_enreg,&
  this%dtfil=>dtfil
  this%dtset=>dtset
  this%psps=>psps
+ this%acell=>acell
  this%crystal=>crystal
  this%mpi_enreg=>mpi_enreg
  this%nfftf=>nfftf
@@ -221,6 +226,7 @@ subroutine destroy_dmfet(this)
  this%dtfil=>null()
  this%dtset=>null()
  this%psps=>null()
+ this%acell=>null()
  this%crystal=>null()
  this%mpi_enreg=>null()
  this%nfftf=>null()
@@ -515,7 +521,7 @@ end subroutine dmfet_wan2sub
 !! CHILDREN
 !!
 !! SOURCE
-subroutine dmfet_core(this)
+subroutine dmfet_core(this,rprim)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -527,29 +533,43 @@ subroutine dmfet_core(this)
  implicit none
 
  type(dmfet_type), intent(inout) :: this
+ real(dp),intent(inout) :: rprim(3,3)
 
+ type(dataset_type),allocatable :: sub_dtsets(:)
+ type(coeff2_type),allocatable :: dens_sub(:)
  type(oep_type) :: oep_args
 
+ integer :: nsubsys
  integer :: opt_algorithm = 0
+ integer :: dim_sub,i,j
 
 !arrays
  real(dp),allocatable :: dens_tot(:,:),emb_pot(:,:)
- 
 
- ABI_ALLOCATE(dens_tot,(this%dim_all,this%dim_all)) !use all of sub orbitals for now
+ dim_sub = this%dim_all !use all of sub orbitals for now
+ ABI_ALLOCATE(dens_tot,(dim_sub,dim_sub))
 
  !total scf calc in subspace
- call gstate_sub(this%crystal,this%dtset,this%psps,this%mpi_enreg,this%dtfil,&
-& this%npwarr,this%nfftf,this%mcg,this%cg,this%ylm,this%ylmgr,this%kg,&
-& this%pawtab,this%pawrad,this%pawang,this%pawfgr,this%wvl,&
-& dens_tot,this%can2sub,this%dim_all,this%dim_all,this%ecore,this%occ) 
+ call gstate_sub(this%acell,this%dtset,this%psps,rprim,this%mpi_enreg,this%dtfil,this%wvl,&
+& this%cg,this%pawtab,this%pawrad,this%pawang,this%crystal%xred,&
+& dens_tot,this%can2sub,this%dim_all,dim_sub) 
 
 
- ABI_ALLOCATE(emb_pot,(this%dim_all,this%dim_all))
+ nsubsys = this%dtset%nsubsys
+ ABI_DATATYPE_ALLOCATE(sub_dtsets,(nsubsys))
+ call build_subsys(this%dtset,sub_dtsets,nsubsys)
+
+ ABI_ALLOCATE(emb_pot,(dim_sub,dim_sub))
  emb_pot = zero
- call oep_init(oep_args,dens_tot,emb_pot,this%dim_all,opt_algorithm)
- call oep_run(oep_args)
- call destroy_oep(oep_args)
+
+ ABI_DATATYPE_ALLOCATE(dens_sub,(nsubsys))
+ do i=1,nsubsys
+   ABI_ALLOCATE(dens_sub(i)%value, (dim_sub,dim_sub))
+ enddo
+
+ call oep_init(oep_args,dens_tot,dens_sub,emb_pot,this%can2sub,this%dim_all,dim_sub,opt_algorithm,sub_dtsets,nsubsys)
+! call oep_run(oep_args)
+! call destroy_oep(oep_args)
 
 end subroutine dmfet_core
 
@@ -578,7 +598,7 @@ end subroutine dmfet_core
 !! CHILDREN
 !!
 !! SOURCE
-subroutine dmfet_run(this)
+subroutine dmfet_run(this,rprim)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -590,6 +610,7 @@ subroutine dmfet_run(this)
  implicit none
 
  type(dmfet_type), intent(inout) :: this
+ real(dp),intent(inout)::rprim(3,3)
 
  character(len=500) :: message
 
@@ -606,9 +627,76 @@ subroutine dmfet_run(this)
 
 
  call dmfet_subspac(this)
- call dmfet_core(this)
+ call dmfet_core(this,rprim)
 
 end subroutine dmfet_run
+
+
+
+subroutine build_subsys(dtset,sub_dtsets,nsubsys)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'build_subsys'
+!End of the abilint section
+
+ implicit none
+
+ integer,intent(in) :: nsubsys
+ type(dataset_type),intent(in) :: dtset
+ type(dataset_type),intent(inout) :: sub_dtsets(nsubsys)
+! type(crystal_t),intent(in) :: crystal
+! type(crystal_t),intent(inout) :: sub_crystals(nsubsys)
+ !type(coeff2_type),intent(inout) :: sub_xreds(nsubsys)
+
+ integer :: i, j, k, ioff, sub_natom
+ integer,allocatable :: ia(:)
+
+ ABI_ALLOCATE(ia,(dtset%natom))
+
+ ioff = 0
+ do i=1,nsubsys
+   call dtset_copy(sub_dtsets(i), dtset)
+   sub_natom = dtset%subsys_natom(i)
+   !sub_dtsets(i)%natom = sub_natom
+
+   !ABI_DEALLOCATE(sub_dtsets(i)%typat)
+   !ABI_ALLOCATE(sub_dtsets(i)%typat,(sub_natom))
+
+   !ABI_DEALLOCATE(sub_dtsets(i)%xred_orig)
+   !ABI_ALLOCATE(sub_dtsets(i)%xred_orig,(3,sub_natom,1))
+
+   !ABI_ALLOCATE(sub_xreds(i)%value,(3,sub_natom))
+   
+   do j=1,sub_natom
+     ia(j) = dtset%subsys_iatom(j+ioff)
+     !sub_dtsets(i)%typat(j) = dtset%typat(ia)
+     !sub_dtsets(i)%xred_orig(:,j,1) = dtset%xred_orig(:,ia,1)
+     !sub_xreds(i)%value(:,j) = crystal%xred(:,ia)
+   enddo
+
+   do j=1,dtset%natom
+      do k=1,sub_natom
+        if(ia(k).eq.j) goto 200
+      enddo
+      sub_dtsets(i)%typat(j) = dtset%typat(j) + dtset%ntypat/2
+200 enddo
+
+   ioff = ioff + sub_natom
+ enddo
+
+! do i=1,nsubsys
+!   call crystal_init(crystal%amu,sub_crystals(i),crystal%space_group,dtset%natom,&
+!&   crystal%npsp,crystal%ntypat,crystal%nsym,crystal%rprimd,sub_dtsets(i)%typat,crystal%xred,&
+!&   crystal%zion,crystal%znucl,crystal%timrev,crystal%use_antiferro,.false.,crystal%title,&
+!&   crystal%symrel,crystal%tnons,crystal%symafm)
+! enddo
+
+ ABI_DEALLOCATE(ia)
+
+end subroutine build_subsys
 
 
 end module m_dmfet

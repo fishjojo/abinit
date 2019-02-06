@@ -98,7 +98,8 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
  type(datafiles_type),intent(inout) :: dtfil
 
  character(len=6),intent(in) :: codvsn
- real(dp),intent(in) :: acell(3),rprim(3,3),xred(3,dtset%natom)
+ real(dp),intent(in) :: acell(3),xred(3,dtset%natom)
+ real(dp),intent(inout) :: rprim(3,3)
 
  type(pawrad_type),intent(inout) :: pawrad(psps%ntypat*psps%usepaw)
  type(pawtab_type),intent(inout) :: pawtab(psps%ntypat*psps%usepaw)
@@ -242,9 +243,9 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
 !finished reading
 !========================================
 
- call dmfet_init(dmfet_args,crystal,dtfil,dtset,psps,mpi_enreg,&
+ call dmfet_init(dmfet_args,acell,crystal,dtfil,dtset,psps,mpi_enreg,&
 & kg,nfftf,pawtab,pawrad,pawang,pawfgr,npwarr,ylm,ylmgr,mcg,cg,eigen,occ,e_fermie,ecore,wvl)
- call dmfet_run(dmfet_args)
+ call dmfet_run(dmfet_args,rprim)
  call destroy_dmfet(dmfet_args)
 
  call crystal_free(crystal)

@@ -965,6 +965,32 @@ contains
    nimagem(0)=tmpimg0
  end if
 
+!subsys_natom
+ narr=10
+ do idtset=0,ndtset_alloc       ! specific size for each dataset
+   narrm(idtset)=dtsets(idtset)%nsubsys
+   if(idtset==0)narrm(idtset)=10
+   if (narrm(idtset)>0.and.dtsets(idtset)%nsubsys>0) then
+     intarr(1:narrm(idtset),idtset)=dtsets(idtset)%subsys_natom(1:narrm(idtset))
+   end if
+ end do
+ call prttagm(dprarr,intarr,iout,jdtset_,1,marr,narr,narrm,ncid,ndtset_alloc,'subsys_natom','INT',1)
+
+!subsys_iatom
+ narr=mxvals%natom
+ do idtset=0,ndtset_alloc       ! specific size for each dataset
+   narrm(idtset)=dtsets(idtset)%natom
+   if(idtset==0) then
+     narrm(idtset)=mxvals%natom
+   else if(dtsets(idtset)%nsubsys<=0) then
+     narrm(idtset)=0
+   endif
+   if (narrm(idtset)>0.and.dtsets(idtset)%nsubsys>0) then
+     intarr(1:narrm(idtset),idtset)=dtsets(idtset)%subsys_iatom(1:narrm(idtset))
+   end if
+ end do
+ call prttagm(dprarr,intarr,iout,jdtset_,1,marr,narr,narrm,ncid,ndtset_alloc,'subsys_iatom','INT',1)
+
 !symafm
  intarr(:,0)=1
  narr=nsym ! default size for all datasets

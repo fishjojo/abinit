@@ -426,6 +426,7 @@ type dataset_type
  integer :: nspinor
  integer :: nsppol
  integer :: nstep
+ integer :: nsubsys !Xing
  integer :: nsym
  integer :: ntime
  integer :: ntimimage
@@ -659,6 +660,8 @@ type dataset_type
  integer, allocatable ::  plowan_projcalc(:) ! plowan_projcalc(\sum_iatom plowan_nbl)
  integer, allocatable ::  prtatlist(:)  ! prtatlist(natom)
  integer, allocatable ::  so_psp(:)     ! so_psp(npsp)
+ integer, allocatable ::  subsys_iatom(:)    ! subsys_iatom(natom) Xing for embedding
+ integer, allocatable ::  subsys_natom(:)    ! subsys_natom(nsubsys)
  integer, allocatable ::  symafm(:)     ! symafm(nsym)
  integer, allocatable ::  symrel(:,:,:) ! symrel(3,3,nsym)
  integer, allocatable ::  typat(:)      ! typat(natom)
