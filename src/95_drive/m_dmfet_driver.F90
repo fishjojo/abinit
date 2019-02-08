@@ -244,7 +244,7 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
 !========================================
 
  call dmfet_init(dmfet_args,acell,crystal,dtfil,dtset,psps,mpi_enreg,&
-& kg,nfftf,pawtab,pawrad,pawang,pawfgr,npwarr,ylm,ylmgr,mcg,cg,eigen,occ,e_fermie,ecore,wvl)
+& kg,nfftf,pawtab,pawrad,pawang,npwarr,ylm,ylmgr,mcg,cg,eigen,occ,e_fermie,ecore,wvl)
  call dmfet_run(dmfet_args,rprim)
  call destroy_dmfet(dmfet_args)
 

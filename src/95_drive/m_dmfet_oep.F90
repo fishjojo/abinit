@@ -30,6 +30,7 @@ module m_dmfet_oep
 
  use m_crystal,          only : crystal_t
  use m_gstate_sub
+ use m_results_gs,       only : results_gs_type,init_results_gs
 
  implicit none
 
@@ -42,23 +43,24 @@ module m_dmfet_oep
 
  type, public :: oep_type
 
+   type(gstate_sub_input_var),pointer :: scf_inp=>null()
+
+   integer,pointer :: opt_algorithm=>null()
+   integer,pointer :: nsubsys=>null()
+
    real(dp),pointer :: P_ref(:,:)=>null()
    real(dp),pointer :: V_emb(:,:)=>null()
-   complex(dpc),pointer :: can2sub(:,:)=>null()
+
    type(coeff2_type),pointer :: P_sub(:)=>null()
    type(dataset_type),pointer :: sub_dtsets(:)=>null()
 
-   integer,pointer :: dim_can=>null()
-   integer,pointer :: dimP=>null()
-   integer,pointer :: opt_algorithm=>null()
-   integer,pointer :: nsubsys=>null()
 
  end type oep_type
 
 
 contains
 
-subroutine oep_init(this,P_ref,P_sub,V_emb,can2sub,dim_can,dimP,opt_algorithm,sub_dtsets,nsubsys)
+subroutine oep_init(this,scf_inp,P_ref,P_sub,V_emb,opt_algorithm,sub_dtsets,nsubsys)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -70,24 +72,21 @@ subroutine oep_init(this,P_ref,P_sub,V_emb,can2sub,dim_can,dimP,opt_algorithm,su
  implicit none
 
  type(oep_type),intent(inout) :: this
+ type(gstate_sub_input_var),intent(in),target :: scf_inp
 
- integer,intent(in),target :: dim_can,dimP,opt_algorithm,nsubsys
- real(dp),intent(in),target :: P_ref(dimP,dimP)
- real(dp),intent(inout),target :: V_emb(dimP,dimP)
- complex(dpc),intent(in),target :: can2sub(dim_can,dimP)
+ integer,intent(in),target :: opt_algorithm,nsubsys
+ real(dp),intent(in),target :: P_ref(scf_inp%dim_suborb,scf_inp%dim_suborb)
+ real(dp),intent(inout),target :: V_emb(scf_inp%dim_sub,scf_inp%dim_sub)
  type(coeff2_type),intent(inout),target :: P_sub(nsubsys)
  type(dataset_type),intent(inout),target :: sub_dtsets(nsubsys)
 
- this%dim_can=>dim_can
- this%dimP=>dimP
+ this%scf_inp=>scf_inp
  this%nsubsys=>nsubsys
  this%opt_algorithm=>opt_algorithm
-
 
  this%P_ref=>P_ref
  this%V_emb=>V_emb
  this%P_sub=>P_sub
- this%can2sub=>can2sub
 
  this%sub_dtsets=>sub_dtsets
 
@@ -96,7 +95,7 @@ end subroutine oep_init
 
 
 
-subroutine oep_run(this)
+subroutine oep_run(this,wtol,max_cycle)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -110,6 +109,7 @@ subroutine oep_run(this)
  include 'nlopt.f'
 
  type(oep_type),intent(inout) :: this
+ integer,intent(in) :: wtol,max_cycle
 
  integer*8 opt  !pointer to the opt object
  integer algorithm, n, ires
@@ -120,7 +120,7 @@ subroutine oep_run(this)
 
  opt = 0
  algorithm = NLOPT_LD_LBFGS !temporarily hard coded
- dimP = this%dimP
+ dimP = this%scf_inp%dim_sub
  n = dimP*(dimP+1)/2
 
  ABI_ALLOCATE(x,(n))
@@ -128,9 +128,9 @@ subroutine oep_run(this)
 
  call nlo_create(opt, algorithm, n)
 
- tol = 1.d-5
+ tol = 10.0_dp**(-wtol)
  call nlo_set_ftol_abs(ires, opt, tol)
-
+ call nlo_set_maxeval(ires, opt, max_cycle)
  call nlo_set_max_objective(ires, opt, cost_wuyang, this)
 
  call nlo_optimize(ires, opt, x, minf)
@@ -238,18 +238,27 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
  real(dp),allocatable :: diffP(:,:), e_sub(:)
  type(oep_type) :: this
 
- dim_can = this%dim_can
- dimP = this%dimP
+ type(results_gs_type),allocatable :: results(:)
+
+ dim_can = this%scf_inp%dim_suborb
+ dimP = this%scf_inp%dim_sub
  call vec2mat(x,this%V_emb,dimP)
 
  !subsystem scf
  ABI_ALLOCATE(e_sub,(this%nsubsys))
-! do i=1,this%nsubsys
-!   call gstate_sub(this%sub_crystals(i),this%sub_dtsets(i),this%psps,this%mpi_enreg,this%dtfil,&
-!&   this%npwarr,this%nfftf,this%mcg,this%cg,this%ylm,this%ylmgr,this%kg,&
-!&   this%pawtab,this%pawrad,this%pawang,this%pawfgr,this%wvl,&
-!&   this%P_sub(i),this%can2sub,dim_can,dimP,this%ecore,this%occ,e_sub(i),this%V_emb)
-! enddo
+
+ ABI_DATATYPE_ALLOCATE(results,(this%nsubsys))
+
+ do i=1,this%nsubsys
+   call init_results_gs(this%sub_dtsets(i)%natom,this%sub_dtsets(i)%nsppol,results(i))
+   call gstate_sub(this%scf_inp%acell,this%sub_dtsets(i),this%scf_inp%psps,this%scf_inp%rprim,&
+&   results(i),this%scf_inp%mpi_enreg,this%scf_inp%dtfil,this%scf_inp%wvl,&
+&   this%scf_inp%cg,this%scf_inp%pawtab,this%scf_inp%pawrad,this%scf_inp%pawang,this%scf_inp%xred,&
+&   this%P_sub(i)%value,this%scf_inp%can2sub,this%scf_inp%dim_suborb,this%scf_inp%dim_sub,this%V_emb)
+
+   e_sub(i) = results(i)%etotal
+   write(std_out,*) "energy of subsystem ",i,": ",e_sub(i)
+ enddo
 
 
  !objective function
@@ -258,6 +267,8 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
    f = f + e_sub(i)
  enddo 
  f = f - trace_dot(this%P_ref,this%V_emb,dimP)
+
+ write(std_out,*) "objective function value:", f
 
  ABI_DEALLOCATE(e_sub)
 
@@ -271,6 +282,7 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
    enddo
    diffP = diffP - this%P_ref
    call mat2vec(grad,diffP,dimP)
+   write(std_out,*) "max component of gradient:", maxval(abs(grad))
    ABI_DEALLOCATE(diffP)
  endif
 
@@ -293,7 +305,6 @@ subroutine destroy_oep(this)
  type(oep_type),intent(inout) :: this
 
 
- this%dimP=>null()
  this%nsubsys=>null()
  this%opt_algorithm=>null()
 

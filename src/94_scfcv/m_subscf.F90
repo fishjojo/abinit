@@ -60,7 +60,7 @@ module m_subscf
  use m_paw_occupancies,  only : initrhoij
  use m_paw_denpot,       only : pawdenpot
  use m_pawdij,           only : pawdij, symdij,pawdijhat
- use m_energies,         only : energies_type, energies_init
+ use m_energies,         only : energies_type, energies_init, energies_copy
 
  use m_symtk,            only : symmetrize_xred
  use m_spacepar,         only : setsym
@@ -80,6 +80,8 @@ module m_subscf
  use m_paw_occupancies,  only : pawmkrhoij
  use m_paw_mkrho,        only : pawmkrho
  use m_pawcprj,          only : pawcprj_type, pawcprj_alloc,pawcprj_getdim,pawcprj_free
+
+ use m_results_gs,       only : results_gs_type
 
  implicit none
 
@@ -134,6 +136,7 @@ module m_subscf
    real(dp), pointer :: dens_mat_real(:,:) => null()
    real(dp), pointer :: emb_pot(:,:) => null()
 
+   type(results_gs_type),pointer :: results_gs => null()
    logical :: has_embpot
 
    !useless
@@ -172,7 +175,8 @@ contains
 !! CHILDREN
 !!
 !! SOURCE
-subroutine subscf_init(this,dtfil,dtset,psps,crystal,nfftf,pawtab,pawrad,pawang,pawfgr,mpi_enreg,&
+subroutine subscf_init(this,dtfil,dtset,psps,results_gs,crystal,nfftf,&
+&                      pawtab,pawrad,pawang,pawfgr,mpi_enreg,&
 &                      ylm,ylmgr,kg,cg,mcg,my_natom,npwarr,ecore,wvl,&
 &                      occ,rhog,rhor,pawrhoij,dens_mat_real,dim_sub,&
 &                      taug,taur,paw_dmft,dtefield,pwind_alloc,pwind,pwnsfac,electronpositron,& !useless
@@ -198,6 +202,7 @@ subroutine subscf_init(this,dtfil,dtset,psps,crystal,nfftf,pawtab,pawrad,pawang,
  type(pawrad_type), intent(in),target :: pawrad(psps%ntypat*psps%usepaw)
  type(pawang_type),intent(in),target :: pawang
  type(wvl_data),intent(in),target :: wvl !useless
+ type(results_gs_type),intent(inout),target :: results_gs
 
  integer, intent(in),target :: kg(3,dtset%mpw*dtset%mkmem)
  integer, intent(in),target :: nfftf,mcg,my_natom
@@ -235,6 +240,7 @@ subroutine subscf_init(this,dtfil,dtset,psps,crystal,nfftf,pawtab,pawrad,pawang,
  this%crystal=>crystal
 
  this%wvl=>wvl
+ this%results_gs=>results_gs
 
  this%pawtab=>pawtab
  this%pawrad=>pawrad
@@ -318,6 +324,7 @@ subroutine subscf_destroy(this)
  this%crystal=>null()
 
  this%wvl=>null()
+ this%results_gs=>null()
 
  this%pawtab=>null()
  this%pawrad=>null()
@@ -437,10 +444,10 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
  type(pseudopotential_type),intent(in) :: psps
 
  type(pawtab_type), intent(inout) :: pawtab(psps%ntypat*psps%usepaw)
- type(pawang_type),intent(in) :: pawang
- type(pawfgr_type),intent(inout) :: pawfgr
+ type(pawang_type), intent(in) :: pawang
+ type(pawfgr_type), intent(inout) :: pawfgr
  type(pawrad_type), intent(in) :: pawrad(psps%ntypat*psps%usepaw)
-
+ 
  integer,intent(inout) :: initialized,nfftf
 
  real(dp),intent(inout) :: rhog(2,nfftf)
@@ -474,8 +481,7 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
  logical,save :: tfw_activated=.false.
  character(len=1500) :: message
 
- type(energies_type) :: energies
- 
+ type(energies_type) :: energies 
  type(ab7_mixing_object) :: mix
 
  !arrays
@@ -1181,14 +1187,61 @@ endif
      istep_mix=1;reset_mixing=.false.
    end if
 
-
  enddo
+
+ call cleanup(this%results_gs,energies,etotal)
+
+
+ if (psps%usepaw==1) then
+   if (dtset%iscf>0) then
+     do iatom=1,my_natom
+       this%pawrhoij(iatom)%lmnmix_sz=0
+       this%pawrhoij(iatom)%use_rhoijres=0
+       ABI_DEALLOCATE(this%pawrhoij(iatom)%kpawmix)
+       ABI_DEALLOCATE(this%pawrhoij(iatom)%rhoijres)
+     end do
+   end if
+!   if (recompute_cprj) then
+!     usecprj=0;mcprj=0
+!     call pawcprj_free(cprj)
+!     ABI_DATATYPE_DEALLOCATE(cprj_local)
+!   end if
+   call paw_an_free(paw_an)
+   call paw_ij_free(paw_ij)
+   call pawfgrtab_free(pawfgrtab)
+
+   ABI_DATATYPE_DEALLOCATE(pawfgrtab)
+   ABI_DATATYPE_DEALLOCATE(paw_an)
+   ABI_DATATYPE_DEALLOCATE(paw_ij)
+   ABI_DEALLOCATE(nhat)
+ end if
+! ABI_DEALLOCATE(dimcprj_srt)
+! ABI_DEALLOCATE(dimcprj)
 
 
 
 end subroutine subscf_core
 
 
+
+subroutine cleanup(results_gs,energies,etotal)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'cleanup'
+!End of the abilint section
+
+ type(results_gs_type),intent(inout) :: results_gs
+ type(energies_type),intent(in) :: energies
+ real(dp),intent(in) :: etotal
+
+ call energies_copy(energies,results_gs%energies)
+ results_gs%etotal     =etotal
+
+
+end subroutine cleanup
 
 
 !!****f* m_subscf/subscf_vtorho

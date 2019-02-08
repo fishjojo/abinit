@@ -600,6 +600,8 @@ type dataset_type
  integer :: vdw_df_nsmooth
  integer :: vdw_df_tweaks
  integer :: vdw_xc
+ integer :: vemb_opt_w_tol !Xing
+ integer :: vemb_opt_cycle !Xing
  integer :: wfoptalg
  integer :: wfk_task
  integer :: wvl_bigdft_comp

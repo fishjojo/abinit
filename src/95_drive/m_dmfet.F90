@@ -37,10 +37,10 @@ module m_dmfet
  use m_kg,               only : getph
  use m_pawang,           only : pawang_type
  use m_pawtab,           only : pawtab_type
- use m_pawfgr,           only : pawfgr_type
  use m_pawcprj,          only : pawcprj_type, pawcprj_getdim, pawcprj_alloc,pawcprj_free
  use m_pawrad,           only : pawrad_type
- use m_dtset,            only : dtset_copy
+ use m_dtset,            only : dtset_copy,dtset_chkneu
+ use m_results_gs,       only : results_gs_type,init_results_gs
 
  use m_dmfet_oep
  use m_gstate_sub
@@ -70,7 +70,6 @@ module m_dmfet
    integer, pointer :: kg(:,:) => null()
    integer, pointer :: npwarr(:) => null()
    type(pawtab_type), pointer :: pawtab(:) => null()
-   type(pawfgr_type),pointer :: pawfgr => null()
    type(pawrad_type), pointer :: pawrad(:) => null()
    type(pawang_type),pointer :: pawang => null()
 
@@ -116,7 +115,7 @@ contains
 !!
 !! SOURCE
 subroutine dmfet_init(this,acell,crystal,dtfil,dtset,psps,mpi_enreg,&
-& kg,nfftf,pawtab,pawrad,pawang,pawfgr,npwarr,ylm,ylmgr,mcg,cg,eigen,occ,e_fermie,ecore,wvl)
+& kg,nfftf,pawtab,pawrad,pawang,npwarr,ylm,ylmgr,mcg,cg,eigen,occ,e_fermie,ecore,wvl)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -137,7 +136,6 @@ subroutine dmfet_init(this,acell,crystal,dtfil,dtset,psps,mpi_enreg,&
  integer, intent(in),target :: npwarr(dtset%nkpt)
  real(dp),intent(in),target :: acell(3)
 
- type(pawfgr_type),intent(in),target :: pawfgr
 
  integer,intent(in),target :: nfftf,mcg
  real(dp), intent(in),target :: cg(2,mcg)
@@ -170,7 +168,6 @@ subroutine dmfet_init(this,acell,crystal,dtfil,dtset,psps,mpi_enreg,&
  this%mcg=>mcg
  this%cg=>cg
 
- this%pawfgr=>pawfgr
  this%pawtab=>pawtab
  this%pawrad=>pawrad
  this%pawang=>pawang
@@ -236,7 +233,6 @@ subroutine destroy_dmfet(this)
  this%mcg=>null()
  this%cg=>null()
 
- this%pawfgr=>null()
  this%pawtab=>null()
  this%pawrad=>null()
  this%pawang=>null()
@@ -539,6 +535,9 @@ subroutine dmfet_core(this,rprim)
  type(coeff2_type),allocatable :: dens_sub(:)
  type(oep_type) :: oep_args
 
+ type(results_gs_type) :: res_tot
+ type(gstate_sub_input_var) :: scf_inp
+
  integer :: nsubsys
  integer :: opt_algorithm = 0
  integer :: dim_sub,i,j
@@ -550,7 +549,8 @@ subroutine dmfet_core(this,rprim)
  ABI_ALLOCATE(dens_tot,(dim_sub,dim_sub))
 
  !total scf calc in subspace
- call gstate_sub(this%acell,this%dtset,this%psps,rprim,this%mpi_enreg,this%dtfil,this%wvl,&
+ call init_results_gs(this%dtset%natom,this%dtset%nsppol,res_tot)
+ call gstate_sub(this%acell,this%dtset,this%psps,rprim,res_tot,this%mpi_enreg,this%dtfil,this%wvl,&
 & this%cg,this%pawtab,this%pawrad,this%pawang,this%crystal%xred,&
 & dens_tot,this%can2sub,this%dim_all,dim_sub) 
 
@@ -567,9 +567,19 @@ subroutine dmfet_core(this,rprim)
    ABI_ALLOCATE(dens_sub(i)%value, (dim_sub,dim_sub))
  enddo
 
- call oep_init(oep_args,dens_tot,dens_sub,emb_pot,this%can2sub,this%dim_all,dim_sub,opt_algorithm,sub_dtsets,nsubsys)
-! call oep_run(oep_args)
-! call destroy_oep(oep_args)
+ call gstate_sub_input_var_init(scf_inp,this%acell,rprim,this%crystal%xred,this%dtset%natom,this%mcg,this%psps,this%mpi_enreg,&
+& this%dtfil,this%wvl,this%cg,this%pawtab,this%pawrad,this%pawang,this%can2sub,this%dim_all,dim_sub)
+
+ call oep_init(oep_args,scf_inp,dens_tot,dens_sub,emb_pot,opt_algorithm,sub_dtsets,nsubsys)
+ call oep_run(oep_args,this%dtset%vemb_opt_w_tol,this%dtset%vemb_opt_cycle)
+ call destroy_oep(oep_args)
+
+
+!clean memory
+ do i=1,nsubsys
+   ABI_DEALLOCATE(dens_sub(i)%value)
+ enddo
+ ABI_DATATYPE_DEALLOCATE(dens_sub)
 
 end subroutine dmfet_core
 
@@ -684,8 +694,11 @@ subroutine build_subsys(dtset,sub_dtsets,nsubsys)
       sub_dtsets(i)%typat(j) = dtset%typat(j) + dtset%ntypat/2
 200 enddo
 
+   call dtset_chkneu(dtset%charge,sub_dtsets(i),dtset%occopt)
+   write(std_out,*) "No. of electrons in subsysetem ",i,": ",sub_dtsets(i)%nelect 
    ioff = ioff + sub_natom
  enddo
+
 
 ! do i=1,nsubsys
 !   call crystal_init(crystal%amu,sub_crystals(i),crystal%space_group,dtset%natom,&

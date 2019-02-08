@@ -929,6 +929,8 @@ subroutine dtset_copy(dtout, dtin)
  dtout%vdw_df_zab         = dtin%vdw_df_zab
  dtout%vdw_nfrag          = dtin%vdw_nfrag
  dtout%vdw_xc             = dtin%vdw_xc
+ dtout%vemb_opt_w_tol     = dtin%vemb_opt_w_tol
+ dtout%vemb_opt_cycle     = dtin%vemb_opt_cycle
  dtout%wfoptalg           = dtin%wfoptalg
  dtout%wvl_bigdft_comp    = dtin%wvl_bigdft_comp
  dtout%w90iniprj          = dtin%w90iniprj
@@ -2574,7 +2576,7 @@ subroutine chkvars (string)
  list_vars=trim(list_vars)//' vdw_df_qratio vdw_df_rcut vdw_df_rsoft'
  list_vars=trim(list_vars)//' vdw_df_threshold vdw_df_tolerance'
  list_vars=trim(list_vars)//' vdw_df_tweaks vdw_df_zab'
- list_vars=trim(list_vars)//' vel vel_cell vis vprtrb'
+ list_vars=trim(list_vars)//' vel vel_cell vemb_opt_w_tol vemb_opt_cycle vis vprtrb'
 !W
  list_vars=trim(list_vars)//' wfmix wfoptalg wtatcon wtk wtq'
  list_vars=trim(list_vars)//' wvl_bigdft_comp wvl_crmult wvl_frmult wvl_hgrid wvl_ngauss wvl_nprccg'

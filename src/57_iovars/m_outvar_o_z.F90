@@ -1334,6 +1334,12 @@ contains
  dprarr(2,:)=dtsets(:)%vprtrb(2)
  call prttagm(dprarr,intarr,iout,jdtset_,1,marr,2,narrm,ncid,ndtset_alloc,'vprtrb','ENE',0)
 
+!Vemb
+ intarr(1,:)=dtsets(:)%usepead
+ call prttagm(dprarr,intarr,iout,jdtset_,2,marr,1,narrm,ncid,ndtset_alloc,'vemb_opt_w_tol','INT',0)
+
+ intarr(1,:)=dtsets(:)%usepead
+ call prttagm(dprarr,intarr,iout,jdtset_,2,marr,1,narrm,ncid,ndtset_alloc,'vemb_opt_cycle','INT',0)
 
 !###########################################################
 !### 03. Print all the input variables (W)

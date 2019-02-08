@@ -365,9 +365,6 @@ subroutine invars0(dtsets,istatr,istatshft,lenstr,&
    call intagm(dprarr,intarr,jdtset,marr,1,string(1:lenstr),'plowan_compute',tread,'INT')
    if(tread==1) dtsets(idtset)%plowan_compute=intarr(1)
 
-   call intagm(dprarr,intarr,jdtset,marr,1,string(1:lenstr),'nsubsys',tread,'INT')
-   if(tread==1) dtsets(idtset)%nsubsys=intarr(1)
-
    call intagm(dprarr,intarr,jdtset,marr,1,string(1:lenstr),'useria',tread,'INT')
    if(tread==1) dtsets(idtset)%useria=intarr(1)
    call intagm(dprarr,intarr,jdtset,marr,1,string(1:lenstr),'userib',tread,'INT')
@@ -392,6 +389,16 @@ subroutine invars0(dtsets,istatr,istatshft,lenstr,&
 
    call intagm(dprarr,intarr,jdtset,marr,1,string(1:lenstr),'usewvl',tread,'INT')
    if(tread==1) dtsets(idtset)%usewvl=intarr(1)
+
+! Read DMFET related stuffs
+   call intagm(dprarr,intarr,jdtset,marr,1,string(1:lenstr),'nsubsys',tread,'INT')
+   if(tread==1) dtsets(idtset)%nsubsys=intarr(1)
+
+   call intagm(dprarr,intarr,jdtset,marr,1,string(1:lenstr),'vemb_opt_w_tol',tread,'INT')
+   if(tread==1) dtsets(idtset)%vemb_opt_w_tol=intarr(1)
+
+   call intagm(dprarr,intarr,jdtset,marr,1,string(1:lenstr),'vemb_opt_cycle',tread,'INT')
+   if(tread==1) dtsets(idtset)%vemb_opt_cycle=intarr(1)
 
  end do
 

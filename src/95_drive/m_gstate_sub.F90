@@ -53,6 +53,8 @@ module m_gstate_sub
  use m_paw_sphharm,      only : setsym_ylm
  use m_spacepar,         only : setsym
  use m_common,           only : setup1
+ use m_results_gs,       only : results_gs_type
+ use m_energies,         only : energies_init
 
  use m_mpinfo,           only : proc_distrb_cycle
 
@@ -66,10 +68,81 @@ module m_gstate_sub
  private
 
  public :: gstate_sub
+ public :: gstate_sub_input_var_init
+
+ type, public :: gstate_sub_input_var
+
+   type(MPI_type),pointer :: mpi_enreg => null()
+   type(datafiles_type),pointer :: dtfil => null()
+
+   type(pseudopotential_type),pointer :: psps => null()
+   type(pawtab_type), pointer :: pawtab(:) => null()
+   type(pawrad_type), pointer :: pawrad(:) => null()
+   type(pawang_type),pointer :: pawang => null()
+
+   type(wvl_data),pointer :: wvl => null()
+
+   integer, pointer :: dim_suborb=>null()  !length of subspace basis orbitals
+   integer, pointer :: dim_sub=>null() !dimension of subspace
+   real(dp), pointer :: acell(:)=>null()
+   real(dp), pointer :: rprim(:,:)=>null()
+   real(dp), pointer :: xred(:,:)=>null()
+   real(dp), pointer :: cg(:,:)=>null()
+   complex(dpc), pointer :: can2sub(:,:)=>null()
+
+ end type gstate_sub_input_var
 
 contains
 
-subroutine gstate_sub(acell,dtset,psps,rprim,mpi_enreg,dtfil,wvl,&
+subroutine gstate_sub_input_var_init(this,acell,rprim,xred,natom,mcg,psps,mpi_enreg,dtfil,wvl,&
+& cg,pawtab,pawrad,pawang,can2sub,dim_suborb,dim_sub)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'gstate_sub_input_var_init'
+!End of the abilint section
+
+ implicit none
+
+ type(gstate_sub_input_var),intent(inout),target :: this
+ type(pseudopotential_type),intent(in),target :: psps
+ type(MPI_type),intent(in),target :: mpi_enreg
+ type(datafiles_type),intent(in),target :: dtfil
+ type(wvl_data),intent(in),target :: wvl
+
+ type(pawtab_type),intent(in),target :: pawtab(psps%ntypat*psps%usepaw)
+ type(pawrad_type),intent(in),target :: pawrad(psps%ntypat*psps%usepaw)
+ type(pawang_type),intent(in),target :: pawang
+
+ integer, intent(in),target :: natom,mcg,dim_suborb,dim_sub
+ real(dp),intent(in),target :: acell(3)
+ real(dp),intent(in),target :: rprim(3,3)
+ real(dp),intent(in),target :: xred(3,natom)
+ real(dp),intent(in),target :: cg(2,mcg)
+ complex(dpc),intent(in),target :: can2sub(dim_suborb,dim_sub)
+
+ this%psps=>psps
+ this%mpi_enreg=>mpi_enreg
+ this%dtfil=>dtfil
+ this%wvl=>wvl
+ this%pawtab=>pawtab
+ this%pawrad=>pawrad
+ this%pawang=>pawang
+ this%dim_suborb=>dim_suborb
+ this%dim_sub=>dim_sub
+ this%acell=>acell
+ this%rprim=>rprim
+ this%xred=>xred
+ this%cg=>cg
+ this%can2sub=>can2sub
+
+end subroutine gstate_sub_input_var_init
+
+
+
+subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 & cg,pawtab,pawrad,pawang,xred,&
 & dens,can2sub,dim_can,dim_sub,&
 & emb_pot) !optional
@@ -89,6 +162,7 @@ subroutine gstate_sub(acell,dtset,psps,rprim,mpi_enreg,dtfil,wvl,&
  type(datafiles_type),intent(inout) :: dtfil
  type(wvl_data),intent(inout) :: wvl !NYI
 
+ type(results_gs_type),intent(inout) :: results_gs
 
 
  type(pawtab_type), intent(inout) :: pawtab(psps%ntypat*psps%usepaw)
@@ -161,10 +235,10 @@ subroutine gstate_sub(acell,dtset,psps,rprim,mpi_enreg,dtfil,wvl,&
 !### 02. Calls setup1, kpgio, initylmg
 
  ecore=zero
- !results_gs%pel(1:3)   =zero
- !results_gs%grchempottn(:,:)=zero
- !results_gs%grewtn(:,:)=zero
- !call energies_init(results_gs%energies)
+ results_gs%pel(1:3)   =zero
+ results_gs%grchempottn(:,:)=zero
+ results_gs%grewtn(:,:)=zero
+ call energies_init(results_gs%energies)
 
 !Set up for iterations
  call setup1(acell,bantot,dtset,&
@@ -498,14 +572,14 @@ subroutine gstate_sub(acell,dtset,psps,rprim,mpi_enreg,dtfil,wvl,&
 !  ### 14. Run SCF
 
  if(present(emb_pot)) then
-  call subscf_init(subscf_args,dtfil,dtset,psps,crystal,nfftf,&
+  call subscf_init(subscf_args,dtfil,dtset,psps,results_gs,crystal,nfftf,&
 &  pawtab,pawrad,pawang,pawfgr,mpi_enreg,&
 &  ylm,ylmgr,kg,cg,mcg,my_natom,npwarr,ecore,wvl,&
 &  occ,rhog,rhor,pawrhoij,dens,dim_sub,&
 &  taug,taur,paw_dmft,dtefield,pwind_alloc,pwind,pwnsfac,electronpositron,&
 &  emb_pot)
  else
-  call subscf_init(subscf_args,dtfil,dtset,psps,crystal,nfftf,&
+  call subscf_init(subscf_args,dtfil,dtset,psps,results_gs,crystal,nfftf,&
 &  pawtab,pawrad,pawang,pawfgr,mpi_enreg,&
 &  ylm,ylmgr,kg,cg,mcg,my_natom,npwarr,ecore,wvl,&
 &  occ,rhog,rhor,pawrhoij,dens,dim_sub,&
