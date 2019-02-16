@@ -32,15 +32,22 @@ module m_dmfet
  use m_crystal,          only : crystal_t,crystal_init,crystal_print
  use defs_wvltypes,      only : wvl_data
  use m_plowannier
+ use m_hdr
+ use m_ebands
+ use m_cgtools
 
+ use m_fft,              only : fourwf,fftpac
+ use m_fftcore,          only : sphereboundary
  use m_cgprj,            only : ctocprj
  use m_kg,               only : getph
+ use m_pawfgr,           only : pawfgr_type
  use m_pawang,           only : pawang_type
  use m_pawtab,           only : pawtab_type
  use m_pawcprj,          only : pawcprj_type, pawcprj_getdim, pawcprj_alloc,pawcprj_free
  use m_pawrad,           only : pawrad_type
  use m_dtset,            only : dtset_copy,dtset_chkneu
  use m_results_gs,       only : results_gs_type,init_results_gs
+ use m_ioarr,            only : fftdatar_write
 
  use m_dmfet_oep
  use m_gstate_sub
@@ -71,7 +78,8 @@ module m_dmfet
    integer, pointer :: npwarr(:) => null()
    type(pawtab_type), pointer :: pawtab(:) => null()
    type(pawrad_type), pointer :: pawrad(:) => null()
-   type(pawang_type),pointer :: pawang => null()
+   type(pawang_type), pointer :: pawang => null()
+   type(pawfgr_type), pointer :: pawfgr => null()
 
    real(dp), pointer :: acell(:)=>null()
    real(dp), pointer :: ylm(:,:) => null()
@@ -115,7 +123,7 @@ contains
 !!
 !! SOURCE
 subroutine dmfet_init(this,acell,crystal,dtfil,dtset,psps,mpi_enreg,&
-& kg,nfftf,pawtab,pawrad,pawang,npwarr,ylm,ylmgr,mcg,cg,eigen,occ,e_fermie,ecore,wvl)
+& kg,nfftf,pawfgr,pawtab,pawrad,pawang,npwarr,ylm,ylmgr,mcg,cg,eigen,occ,e_fermie,ecore,wvl)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -140,6 +148,7 @@ subroutine dmfet_init(this,acell,crystal,dtfil,dtset,psps,mpi_enreg,&
  integer,intent(in),target :: nfftf,mcg
  real(dp), intent(in),target :: cg(2,mcg)
  integer, intent(in),target :: kg(3,dtset%mpw*dtset%mkmem)
+ type(pawfgr_type), intent(inout),target :: pawfgr
  type(pawtab_type), intent(inout),target :: pawtab(psps%ntypat*psps%usepaw)
  type(pawrad_type), intent(inout),target :: pawrad(psps%ntypat*psps%usepaw)
  type(pawang_type), intent(inout),target :: pawang
@@ -168,6 +177,7 @@ subroutine dmfet_init(this,acell,crystal,dtfil,dtset,psps,mpi_enreg,&
  this%mcg=>mcg
  this%cg=>cg
 
+ this%pawfgr=>pawfgr
  this%pawtab=>pawtab
  this%pawrad=>pawrad
  this%pawang=>pawang
@@ -233,6 +243,7 @@ subroutine destroy_dmfet(this)
  this%mcg=>null()
  this%cg=>null()
 
+ this%pawfgr=>null()
  this%pawtab=>null()
  this%pawrad=>null()
  this%pawang=>null()
@@ -517,7 +528,7 @@ end subroutine dmfet_wan2sub
 !! CHILDREN
 !!
 !! SOURCE
-subroutine dmfet_core(this,rprim)
+subroutine dmfet_core(this,rprim,codvsn)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -530,6 +541,7 @@ subroutine dmfet_core(this,rprim)
 
  type(dmfet_type), intent(inout) :: this
  real(dp),intent(inout) :: rprim(3,3)
+ character(len=6),intent(in) :: codvsn
 
  type(dataset_type),allocatable :: sub_dtsets(:)
  type(coeff2_type),allocatable :: dens_sub(:)
@@ -538,12 +550,20 @@ subroutine dmfet_core(this,rprim)
  type(results_gs_type) :: res_tot
  type(gstate_sub_input_var) :: scf_inp
 
+ type(hdr_type) :: hdr
+ type(ebands_t) :: bstruct
+
  integer :: nsubsys
  integer :: opt_algorithm = 0
  integer :: dim_sub,i,j
 
 !arrays
  real(dp),allocatable :: dens_tot(:,:),emb_pot(:,:)
+
+ bstruct = ebands_from_dtset(this%dtset, this%npwarr)
+ call hdr_init(bstruct,codvsn,this%dtset,hdr,this%pawtab,0,this%psps,this%wvl%descr,&
+& comm_atom=this%mpi_enreg%comm_atom,mpi_atmtab=this%mpi_enreg%my_atmtab)
+ call ebands_free(bstruct)
 
  dim_sub = this%dim_all !use all of sub orbitals for now
  ABI_ALLOCATE(dens_tot,(dim_sub,dim_sub))
@@ -552,7 +572,7 @@ subroutine dmfet_core(this,rprim)
  call init_results_gs(this%dtset%natom,this%dtset%nsppol,res_tot)
  call gstate_sub(this%acell,this%dtset,this%psps,rprim,res_tot,this%mpi_enreg,this%dtfil,this%wvl,&
 & this%cg,this%pawtab,this%pawrad,this%pawang,this%crystal%xred,&
-& dens_tot,this%can2sub,this%dim_all,dim_sub) 
+& dens_tot,this%can2sub,this%dim_all,dim_sub,hdr=hdr) 
 
 
  nsubsys = this%dtset%nsubsys
@@ -572,6 +592,11 @@ subroutine dmfet_core(this,rprim)
 
  call oep_init(oep_args,scf_inp,dens_tot,dens_sub,emb_pot,opt_algorithm,sub_dtsets,nsubsys)
  call oep_run(oep_args,this%dtset%vemb_opt_w_tol,this%dtset%vemb_opt_cycle)
+
+
+ call print_vemb(this%dtset,hdr,this%dtfil,this%crystal,this%mpi_enreg,this%pawfgr,this%kg,this%npwarr,&
+& this%cg,this%mcg,oep_args%V_emb,this%can2sub,this%dim_all,dim_sub,this%crystal%ucvol)
+
  call destroy_oep(oep_args)
 
 
@@ -580,6 +605,8 @@ subroutine dmfet_core(this,rprim)
    ABI_DEALLOCATE(dens_sub(i)%value)
  enddo
  ABI_DATATYPE_DEALLOCATE(dens_sub)
+
+ ABI_DEALLOCATE(emb_pot)
 
 end subroutine dmfet_core
 
@@ -608,7 +635,7 @@ end subroutine dmfet_core
 !! CHILDREN
 !!
 !! SOURCE
-subroutine dmfet_run(this,rprim)
+subroutine dmfet_run(this,rprim,codvsn)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -621,7 +648,7 @@ subroutine dmfet_run(this,rprim)
 
  type(dmfet_type), intent(inout) :: this
  real(dp),intent(inout)::rprim(3,3)
-
+ character(len=6),intent(in) :: codvsn
  character(len=500) :: message
 
 
@@ -637,12 +664,34 @@ subroutine dmfet_run(this,rprim)
 
 
  call dmfet_subspac(this)
- call dmfet_core(this,rprim)
+ call dmfet_core(this,rprim,codvsn)
 
 end subroutine dmfet_run
 
 
-
+!!****f* m_dmfet/build_subsys
+!! NAME
+!! build_subsys
+!!
+!! FUNCTION
+!! Prepare dtset for subsystems
+!!
+!! INPUTS
+!!
+!! OUTPUT
+!!
+!! SIDE EFFECTS
+!!
+!! NOTES
+!!
+!! TODO
+!!
+!! PARENTS
+!! dmfet_core
+!!
+!! CHILDREN
+!!
+!! SOURCE
 subroutine build_subsys(dtset,sub_dtsets,nsubsys)
 
 
@@ -710,6 +759,188 @@ subroutine build_subsys(dtset,sub_dtsets,nsubsys)
  ABI_DEALLOCATE(ia)
 
 end subroutine build_subsys
+
+
+!!****f* m_dmfet/print_vemb
+!! NAME
+!! print_vemb
+!!
+!! FUNCTION
+!! Print embedding potential in real space
+!!
+!! INPUTS
+!!
+!! OUTPUT
+!!
+!! SIDE EFFECTS
+!!
+!! NOTES
+!!
+!! TODO
+!! Parallelization
+!!
+!! PARENTS
+!! dmfet_core
+!!
+!! CHILDREN
+!!
+!! SOURCE
+subroutine print_vemb(dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg,mcg,vemb,can2sub,norb,nsub,ucvol)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'print_vemb'
+!End of the abilint section
+
+ implicit none
+
+ type(dataset_type),intent(in) :: dtset
+ type(hdr_type),intent(inout) :: hdr
+ type(datafiles_type),intent(in) :: dtfil
+ type(crystal_t),intent(in) :: crystal
+ type(MPI_type),intent(in) :: mpi_enreg
+ type(pawfgr_type), intent(in) :: pawfgr
+
+ integer,intent(in) :: norb,nsub,mcg
+ integer, intent(in) :: kg(3,dtset%mpw*dtset%mkmem),npwarr(dtset%nkpt)
+
+ real(dp), intent(in) :: ucvol
+ real(dp), intent(in) :: cg(2,mcg)
+ real(dp),intent(in) :: vemb(nsub,nsub)
+ complex(dpc),intent(in) :: can2sub(norb,nsub)
+
+ integer,parameter :: cplex=1,option=0
+ integer :: n1,n2,n3,n4,n5,n6,nfft,nspden
+ integer :: istwf_k,npw_k,nband_k,my_nspinor,tim_fourwf
+ integer :: i,j,k, isppol,ikpt,iband, icg,ikg,ipwsp,icwave
+
+ integer :: ngfft(18),mgfft
+ integer,allocatable :: gbound(:,:),kg_k(:,:)
+
+ real(dp),allocatable :: vemb_r(:,:),vr(:,:,:)
+ real(dp),allocatable :: vemb_can_real(:,:),vemb_can_img(:,:)
+ real(dp),allocatable :: cwavef(:,:,:),wfraug(:,:,:,:,:)
+ real(dp),allocatable :: tmpr(:,:), tmpi(:,:)
+ real(dp) :: dummy(0,0),denpot_dummy(0,0,0)
+ 
+ complex(dpc),allocatable :: tmp(:,:), vemb_cpl(:,:)
+ complex(dpc) :: vemb_can(norb,norb)  !vemb in canonical basis, complex or real?
+
+ mgfft=pawfgr%mgfft
+ ngfft(:)=pawfgr%ngfft(:)
+
+!transform vemb to canonical basis
+ ABI_ALLOCATE(vemb_cpl,(nsub,nsub))
+ do i=1,nsub
+   do j=1,nsub
+     vemb_cpl(i,j) = cmplx(vemb(i,j),0.0_dp,kind=dp)
+   enddo
+ enddo
+
+ ABI_ALLOCATE(tmp,(norb,nsub))
+ call zgemm('N','N',norb,nsub,nsub,cone,can2sub,norb,vemb_cpl,nsub,czero,tmp,norb)
+ call zgemm('N','C',norb,norb,nsub,cone,tmp,norb,can2sub,norb,czero,vemb_can,norb)
+ ABI_DEALLOCATE(tmp)
+ ABI_DEALLOCATE(vemb_cpl)
+!end transformation
+
+ my_nspinor=max(1,dtset%nspinor/mpi_enreg%nproc_spinor)
+
+ n1 = ngfft(1) ; n2 = ngfft(2) ; n3 = ngfft(3)
+ n4 = ngfft(4) ; n5 = ngfft(5) ; n6 = ngfft(6)
+ ABI_ALLOCATE(cwavef,(2,dtset%mpw,my_nspinor))
+ ABI_ALLOCATE(wfraug,(2,n4,n5,n6,norb))
+
+ if(mpi_enreg%paralbd==0) tim_fourwf=3
+ if(mpi_enreg%paralbd==1) tim_fourwf=6
+
+ ABI_ALLOCATE(vemb_can_real,(norb,norb))
+ ABI_ALLOCATE(vemb_can_img,(norb,norb))
+ vemb_can_real = real(vemb_can,kind=dp)
+ vemb_can_img = aimag(vemb_can)
+
+ ABI_ALLOCATE(vemb_r,(n1*n2*n3,dtset%nsppol))
+
+ icg = 0
+ do isppol=1,dtset%nsppol
+   ABI_ALLOCATE(vr,(n4,n5,n6))
+   vr = zero
+   ikg=0
+   do ikpt=1,dtset%nkpt
+
+     nband_k = dtset%nband(ikpt+(isppol-1)*dtset%nkpt)
+     npw_k=npwarr(ikpt)
+     istwf_k = dtset%istwfk(ikpt)
+
+     ABI_ALLOCATE(gbound,(2*mgfft+8,2))
+     ABI_ALLOCATE(kg_k,(3,npw_k))
+     kg_k(:,1:npw_k)=kg(:,1+ikg:npw_k+ikg) 
+     call sphereboundary(gbound,istwf_k,kg_k,mgfft,npw_k)
+
+     do iband=1,norb
+       ipwsp=(iband-1)*npw_k*my_nspinor + icg
+       cwavef(:,:,isppol)=cg(:,1+ipwsp:ipwsp+npw_k)
+
+!       write(std_out,*) "debug: <cg|cg>=", iband, cg_zdotc(npw_k,cwavef(:,:,isppol),cwavef(:,:,isppol))
+
+     !cg->ur
+       call fourwf(cplex,denpot_dummy,cwavef(:,:,isppol),dummy,wfraug(:,:,:,:,iband),gbound,gbound,istwf_k,&
+&        kg_k,kg_k,mgfft,mpi_enreg,1,ngfft,npw_k,1,n4,n5,n6,option,&
+&        dtset%paral_kgb,tim_fourwf,one,one)
+
+!       write(std_out,*) "debug: <ur|ur>=",iband, cg_zdotc(n4*n5*n6,wfraug(:,:,:,:,iband),wfraug(:,:,:,:,iband)),&
+!&        cg_zdotc(n4*n5*n6,wfraug(:,:,:,:,iband),wfraug(:,:,:,:,iband))/(n1*n2*n3*1.0d0)
+     enddo
+
+
+     ABI_ALLOCATE(tmpr,(norb,n4*n5*n6))
+     ABI_ALLOCATE(tmpi,(norb,n4*n5*n6))
+     call dgemm('N','T',norb,n4*n5*n6,norb,one,vemb_can_real,norb,wfraug(1,:,:,:,:),n4*n5*n6,zero,tmpr,norb)
+     call dgemm('N','T',norb,n4*n5*n6,norb,one,vemb_can_img,norb,wfraug(2,:,:,:,:),n4*n5*n6,one,tmpr,norb)
+     call dgemm('N','T',norb,n4*n5*n6,norb,one,vemb_can_img,norb,wfraug(1,:,:,:,:),n4*n5*n6,zero,tmpi,norb)
+     call dgemm('N','T',norb,n4*n5*n6,norb,-1.0_dp,vemb_can_real,norb,wfraug(2,:,:,:,:),n4*n5*n6,one,tmpi,norb)
+
+
+     do i=1,n6
+       do j=1,n5
+         do k=1,n4
+           vr(k,j,i) = vr(k,j,i) + dot_product(wfraug(1,k,j,i,:), tmpr(:,k+(j-1)*n4+(i-1)*n5*n4) )
+           vr(k,j,i) = vr(k,j,i) - dot_product(wfraug(2,k,j,i,:), tmpi(:,k+(j-1)*n4+(i-1)*n5*n4) )
+         enddo
+       enddo
+     enddo
+
+     ABI_DEALLOCATE(tmpr)
+     ABI_DEALLOCATE(tmpi)
+
+     icg=icg+npw_k*my_nspinor*nband_k
+     ikg=ikg+npw_k
+   enddo !ikpt
+
+   call fftpac(isppol,mpi_enreg,dtset%nsppol,n1,n2,n3,n4,n5,n6,ngfft,vemb_r,vr,1)
+   vemb_r = vemb_r/ucvol
+   write(std_out,*) "max(vemb_r_aug)=",maxval(vr)
+   write(std_out,*) "max(vemb_r)=",maxval(vemb_r)
+
+   ABI_DEALLOCATE(vr)
+
+ enddo !isppol
+
+ nfft = n1*n2*n3
+ nspden = dtset%nspden
+ call fftdatar_write("vemb",dtfil%fnameabo_app_vemb,dtset%iomode,hdr,&
+&     crystal,ngfft,cplex,nfft,nspden,vemb_r,mpi_enreg)
+
+!clean up
+ ABI_DEALLOCATE(vemb_r)
+ ABI_DEALLOCATE(cwavef)
+ ABI_DEALLOCATE(wfraug)
+ ABI_DEALLOCATE(vemb_can_real)
+ ABI_DEALLOCATE(vemb_can_img)
+
+end subroutine print_vemb
 
 
 end module m_dmfet

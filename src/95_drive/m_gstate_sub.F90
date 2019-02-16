@@ -33,6 +33,7 @@ module m_gstate_sub
  use m_gemm_nonlop
  use m_bandfft_kpt
  use m_efield
+ use m_hdr
 
  use m_crystal,          only : crystal_t,crystal_init
  use defs_wvltypes,      only : wvl_data
@@ -145,7 +146,7 @@ end subroutine gstate_sub_input_var_init
 subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 & cg,pawtab,pawrad,pawang,xred,&
 & dens,can2sub,dim_can,dim_sub,&
-& emb_pot) !optional
+& emb_pot,hdr) !optional
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -185,6 +186,8 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  type(crystal_t) :: crystal
  logical :: has_to_init,call_pawinit
  character(len=500) :: message
+
+ type(hdr_type),intent(inout),optional :: hdr
 
  type(paw_dmft_type) :: paw_dmft !NYI
  type(efield_type) :: dtefield !NYI
@@ -338,6 +341,13 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  !simply use default occ
  ABI_ALLOCATE(occ,(dtset%mband*dtset%nkpt*dtset%nsppol))
  occ(:) = dtset%occ_orig(:,1)
+
+
+ if(present(hdr))then
+   call hdr_update(hdr,bantot,hdr%etot,hdr%fermie,&
+&   hdr%residm,rprimd,occ,pawrhoij,xred,dtset%amu_orig(:,1),&
+&   comm_atom=mpi_enreg%comm_atom,mpi_atmtab=mpi_enreg%my_atmtab)
+ endif
 
 !###########################################################
 !### 04. Symmetry operations when nsym>1
@@ -586,7 +596,11 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 &  taug,taur,paw_dmft,dtefield,pwind_alloc,pwind,pwnsfac,electronpositron)
  endif
 
- call subscf_run(subscf_args,can2sub,dim_can,dim_sub)
+ if(present(hdr))then
+   call subscf_run(subscf_args,can2sub,dim_can,dim_sub,hdr=hdr)
+ else
+   call subscf_run(subscf_args,can2sub,dim_can,dim_sub)
+ endif
 
  call subscf_destroy(subscf_args)
 

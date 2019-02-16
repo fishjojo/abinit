@@ -695,6 +695,7 @@ subroutine dtfil_init_time(dtfil,iapp)
  dtfil%fnameabo_app_pot=trim(filapp)//'_POT'
  dtfil%fnameabo_app_stm=trim(filapp)//'_STM'
  dtfil%fnameabo_app_vclmb=trim(filapp)//'_VCLMB'
+ dtfil%fnameabo_app_vemb=trim(filapp)//'_VEMB'
  dtfil%fnameabo_app_vha=trim(filapp)//'_VHA'
  dtfil%fnameabo_app_vhxc=trim(filapp)//'_VHXC'
  dtfil%fnameabo_app_vpsp=trim(filapp)//'_VPSP'

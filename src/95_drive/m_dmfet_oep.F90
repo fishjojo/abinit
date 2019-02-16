@@ -244,6 +244,11 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
  dimP = this%scf_inp%dim_sub
  call vec2mat(x,this%V_emb,dimP)
 
+ write(std_out,*) "Vemb:"
+ do i=1,dimP
+   write(std_out,*) this%V_emb(i,:)
+ enddo
+
  !subsystem scf
  ABI_ALLOCATE(e_sub,(this%nsubsys))
 
@@ -254,7 +259,7 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
    call gstate_sub(this%scf_inp%acell,this%sub_dtsets(i),this%scf_inp%psps,this%scf_inp%rprim,&
 &   results(i),this%scf_inp%mpi_enreg,this%scf_inp%dtfil,this%scf_inp%wvl,&
 &   this%scf_inp%cg,this%scf_inp%pawtab,this%scf_inp%pawrad,this%scf_inp%pawang,this%scf_inp%xred,&
-&   this%P_sub(i)%value,this%scf_inp%can2sub,this%scf_inp%dim_suborb,this%scf_inp%dim_sub,this%V_emb)
+&   this%P_sub(i)%value,this%scf_inp%can2sub,this%scf_inp%dim_suborb,this%scf_inp%dim_sub,emb_pot=this%V_emb)
 
    e_sub(i) = results(i)%etotal
    write(std_out,*) "energy of subsystem ",i,": ",e_sub(i)
@@ -305,6 +310,7 @@ subroutine destroy_oep(this)
  type(oep_type),intent(inout) :: this
 
 
+ this%nsubsys=>null()
  this%nsubsys=>null()
  this%opt_algorithm=>null()
 

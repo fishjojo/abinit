@@ -31,6 +31,7 @@ module m_subscf
  use m_cgwf
  use m_efield
  use m_gemm_nonlop
+ use m_hdr
 
  use m_ab7_mixing
 
@@ -376,7 +377,7 @@ end subroutine subscf_destroy
 !! CHILDREN
 !!
 !! SOURCE
-subroutine subscf_run(this,can2sub,dim_can,dim_sub)
+subroutine subscf_run(this,can2sub,dim_can,dim_sub,hdr)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -388,6 +389,8 @@ subroutine subscf_run(this,can2sub,dim_can,dim_sub)
  implicit none
 
  type(subscf_type),intent(inout):: this
+ type(hdr_type),intent(inout),optional :: hdr
+
  integer, intent(in) :: dim_can, dim_sub
  complex(dpc), intent(in) :: can2sub(dim_can,dim_sub)
  integer :: initialized
@@ -395,10 +398,15 @@ subroutine subscf_run(this,can2sub,dim_can,dim_sub)
 
  initialized = 0
 
- call subscf_core(this,this%dtset,this%crystal,this%psps,this%pawtab,this%pawrad,this%pawang,this%pawfgr,&
-&  this%mpi_enreg,initialized,&
-&  this%nfftf,this%ecore,this%rhog,this%rhor,can2sub,dim_can,dim_sub)
-
+ if(present(hdr))then
+   call subscf_core(this,this%dtset,this%crystal,this%psps,this%pawtab,this%pawrad,this%pawang,this%pawfgr,&
+&    this%mpi_enreg,initialized,&
+&    this%nfftf,this%ecore,this%rhog,this%rhor,can2sub,dim_can,dim_sub,hdr=hdr)
+ else
+   call subscf_core(this,this%dtset,this%crystal,this%psps,this%pawtab,this%pawrad,this%pawang,this%pawfgr,&
+&    this%mpi_enreg,initialized,&
+&    this%nfftf,this%ecore,this%rhog,this%rhor,can2sub,dim_can,dim_sub)
+ endif
 
 end subroutine subscf_run
 
@@ -426,7 +434,7 @@ end subroutine subscf_run
 !!
 !! SOURCE
 subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_enreg,initialized,&
-&                      nfftf,ecore,rhog,rhor,can2sub,dim_can,dim_sub)
+&                      nfftf,ecore,rhog,rhor,can2sub,dim_can,dim_sub,hdr)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -447,6 +455,8 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
  type(pawang_type), intent(in) :: pawang
  type(pawfgr_type), intent(inout) :: pawfgr
  type(pawrad_type), intent(in) :: pawrad(psps%ntypat*psps%usepaw)
+
+ type(hdr_type),intent(inout),optional :: hdr
  
  integer,intent(inout) :: initialized,nfftf
 
@@ -1190,7 +1200,11 @@ endif
  enddo
 
  call cleanup(this%results_gs,energies,etotal)
-
+ if(present(hdr))then
+   call hdr_update(hdr,hdr%bantot,etotal,energies%e_fermie,&
+&   residm,crystal%rprimd,this%occ,this%pawrhoij,crystal%xred,dtset%amu_orig(:,1),&
+&   comm_atom=mpi_enreg%comm_atom,mpi_atmtab=mpi_enreg%my_atmtab)
+ endif
 
  if (psps%usepaw==1) then
    if (dtset%iscf>0) then
@@ -1555,7 +1569,7 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  ABI_ALLOCATE(tmp,(dim_can,dim_sub))
  ABI_ALLOCATE(cg_new,(2,this%mcg))
  tmp = czero
- call zgemm('N','N',dim_can,dim_sub,dim_sub,cone,can2sub,dim_can,this%subham_sub,dim_sub,czero,tmp,dim_sub)
+ call zgemm('N','N',dim_can,dim_sub,dim_sub,cone,can2sub,dim_can,this%subham_sub,dim_sub,czero,tmp,dim_can)
  ABI_ALLOCATE(tmp_real,(dim_can,dim_sub))
  ABI_ALLOCATE(tmp_img,(dim_can,dim_sub))
  tmp_real = real(tmp,kind=dp)

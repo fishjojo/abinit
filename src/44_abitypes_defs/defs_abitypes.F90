@@ -1557,6 +1557,7 @@ type dataset_type
   character(len=fnlen) :: fnameabo_app_opt2
   character(len=fnlen) :: fnameabo_app_stm
   character(len=fnlen) :: fnameabo_app_vclmb
+  character(len=fnlen) :: fnameabo_app_vemb
   character(len=fnlen) :: fnameabo_app_vha
   character(len=fnlen) :: fnameabo_app_vhxc
   character(len=fnlen) :: fnameabo_app_vhpsp

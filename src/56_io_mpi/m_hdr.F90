@@ -173,7 +173,7 @@ MODULE m_hdr
  !    Moreover the files produced by the DFPT code do not have a well-defined extension and, as a consequence,
  !    they require a special treatment. In python I would use regexp but Fortran is not python!
 
- type(abifile_t),private,parameter :: all_abifiles(48) = [ &
+ type(abifile_t),private,parameter :: all_abifiles(49) = [ &
 
     ! Files with wavefunctions:
     abifile_t(varname="coefficients_of_wavefunctions", fform=2, ext="WFK", class="wf_planewave"), &
@@ -223,6 +223,8 @@ MODULE m_hdr
     abifile_t(varname="first_order_vhartree", fform=112, ext="VHA(\d+)", class="potential"), &
     abifile_t(varname="first_order_vpsp", fform=113, ext="VPSP(\d+)", class="potential"), &
     abifile_t(varname="first_order_vxc", fform=114, ext="VXC(\d+)", class="potential"), &
+
+    abifile_t(varname="vemb", fform=130, ext="VEMB", class="potential"), &
 
    ! Data used in conducti
     abifile_t(varname="pawnabla", fform=610, ext="OPT1", class="data"), &
@@ -425,6 +427,8 @@ character(len=nctk_slen) function varname_from_fname(filename) result(varname)
    varname = "exchange_correlation_potential"
  case ("VCLMB")
    varname = "vhartree_vloc"
+ case ("VEMB")
+   varname = "vemb"
  case default
    found = .False.
  end select
