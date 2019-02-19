@@ -31,6 +31,7 @@ sources = [
  "m_paw_lmn.F90",
  "m_paw_mkaewf.F90",
  "m_paw_mkrho.F90",
+ "m_paw_mkvij.F90",
  "m_paw_nhat.F90",
  "m_paw_nmr.F90",
  "m_paw_occupancies.F90",

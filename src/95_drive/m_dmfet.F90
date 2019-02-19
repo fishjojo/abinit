@@ -40,6 +40,11 @@ module m_dmfet
  use m_fftcore,          only : sphereboundary
  use m_cgprj,            only : ctocprj
  use m_kg,               only : getph
+ use m_pawrhoij,         only : pawrhoij_type,pawrhoij_free,pawrhoij_free_unpacked,symrhoij
+ use m_paw_occupancies,  only : initrhoij
+ use m_paw_mkrho,        only : denfgr
+ use m_paw_mkvij
+
  use m_pawfgr,           only : pawfgr_type
  use m_pawang,           only : pawang_type
  use m_pawtab,           only : pawtab_type
@@ -594,7 +599,7 @@ subroutine dmfet_core(this,rprim,codvsn)
  call oep_run(oep_args,this%dtset%vemb_opt_w_tol,this%dtset%vemb_opt_cycle)
 
 
- call print_vemb(this%dtset,hdr,this%dtfil,this%crystal,this%mpi_enreg,this%pawfgr,this%kg,this%npwarr,&
+ call print_vemb(this,this%dtset,hdr,this%dtfil,this%crystal,this%mpi_enreg,this%pawfgr,this%kg,this%npwarr,&
 & this%cg,this%mcg,oep_args%V_emb,this%can2sub,this%dim_all,dim_sub,this%crystal%ucvol)
 
  call destroy_oep(oep_args)
@@ -785,7 +790,7 @@ end subroutine build_subsys
 !! CHILDREN
 !!
 !! SOURCE
-subroutine print_vemb(dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg,mcg,vemb,can2sub,norb,nsub,ucvol)
+subroutine print_vemb(this,dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg,mcg,vemb,can2sub,norb,nsub,ucvol)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -796,6 +801,7 @@ subroutine print_vemb(dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg,mcg,
 
  implicit none
 
+ type(dmfet_type), intent(inout) :: this
  type(dataset_type),intent(in) :: dtset
  type(hdr_type),intent(inout) :: hdr
  type(datafiles_type),intent(in) :: dtfil
@@ -812,24 +818,33 @@ subroutine print_vemb(dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg,mcg,
  complex(dpc),intent(in) :: can2sub(norb,nsub)
 
  integer,parameter :: cplex=1,option=0
- integer :: n1,n2,n3,n4,n5,n6,nfft,nspden
+ integer :: n1,n2,n3,n4,n5,n6,nfft
  integer :: istwf_k,npw_k,nband_k,my_nspinor,tim_fourwf
  integer :: i,j,k, isppol,ikpt,iband, icg,ikg,ipwsp,icwave
 
- integer :: ngfft(18),mgfft
+ integer :: ngfftf(18),mgfft,ctocprj_choice,iatom,idir,iorder_cprj
+ integer :: mcprj,mband_cprj
  integer,allocatable :: gbound(:,:),kg_k(:,:)
+ integer,allocatable :: dimcprj_srt(:)
 
- real(dp),allocatable :: vemb_r(:,:),vr(:,:,:)
+ type(pawcprj_type),pointer :: cprj(:,:)
+ type(pawcprj_type),allocatable, target :: cprj_local(:,:)
+ type(pawrhoij_type),allocatable :: pawvij(:)
+ real(dp),allocatable :: vemb_r(:,:),vemb_r_paw(:,:),vr(:,:,:)
+ real(dp),allocatable :: vemb_r_one(:,:),vemb_r_t_one(:,:),nhat_dummy(:,:)
  real(dp),allocatable :: vemb_can_real(:,:),vemb_can_img(:,:)
  real(dp),allocatable :: cwavef(:,:,:),wfraug(:,:,:,:,:)
  real(dp),allocatable :: tmpr(:,:), tmpi(:,:)
+
+ real(dp),allocatable :: ph1d(:,:)
+
  real(dp) :: dummy(0,0),denpot_dummy(0,0,0)
  
  complex(dpc),allocatable :: tmp(:,:), vemb_cpl(:,:)
  complex(dpc) :: vemb_can(norb,norb)  !vemb in canonical basis, complex or real?
 
  mgfft=pawfgr%mgfft
- ngfft(:)=pawfgr%ngfft(:)
+ ngfftf(:)=pawfgr%ngfft(:)
 
 !transform vemb to canonical basis
  ABI_ALLOCATE(vemb_cpl,(nsub,nsub))
@@ -848,8 +863,8 @@ subroutine print_vemb(dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg,mcg,
 
  my_nspinor=max(1,dtset%nspinor/mpi_enreg%nproc_spinor)
 
- n1 = ngfft(1) ; n2 = ngfft(2) ; n3 = ngfft(3)
- n4 = ngfft(4) ; n5 = ngfft(5) ; n6 = ngfft(6)
+ n1 = ngfftf(1) ; n2 = ngfftf(2) ; n3 = ngfftf(3)
+ n4 = ngfftf(4) ; n5 = ngfftf(5) ; n6 = ngfftf(6)
  ABI_ALLOCATE(cwavef,(2,dtset%mpw,my_nspinor))
  ABI_ALLOCATE(wfraug,(2,n4,n5,n6,norb))
 
@@ -887,7 +902,7 @@ subroutine print_vemb(dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg,mcg,
 
      !cg->ur
        call fourwf(cplex,denpot_dummy,cwavef(:,:,isppol),dummy,wfraug(:,:,:,:,iband),gbound,gbound,istwf_k,&
-&        kg_k,kg_k,mgfft,mpi_enreg,1,ngfft,npw_k,1,n4,n5,n6,option,&
+&        kg_k,kg_k,mgfft,mpi_enreg,1,ngfftf,npw_k,1,n4,n5,n6,option,&
 &        dtset%paral_kgb,tim_fourwf,one,one)
 
 !       write(std_out,*) "debug: <ur|ur>=",iband, cg_zdotc(n4*n5*n6,wfraug(:,:,:,:,iband),wfraug(:,:,:,:,iband)),&
@@ -919,22 +934,99 @@ subroutine print_vemb(dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg,mcg,
      ikg=ikg+npw_k
    enddo !ikpt
 
-   call fftpac(isppol,mpi_enreg,dtset%nsppol,n1,n2,n3,n4,n5,n6,ngfft,vemb_r,vr,1)
+   call fftpac(isppol,mpi_enreg,dtset%nsppol,n1,n2,n3,n4,n5,n6,ngfftf,vemb_r,vr,1)
    vemb_r = vemb_r/ucvol
-   write(std_out,*) "max(vemb_r_aug)=",maxval(vr)
-   write(std_out,*) "max(vemb_r)=",maxval(vemb_r)
+!   write(std_out,*) "max(vemb_r_aug)=",maxval(vr)
+!   write(std_out,*) "max(vemb_r)=",maxval(vemb_r)
 
    ABI_DEALLOCATE(vr)
 
  enddo !isppol
 
- nfft = n1*n2*n3
- nspden = dtset%nspden
- call fftdatar_write("vemb",dtfil%fnameabo_app_vemb,dtset%iomode,hdr,&
-&     crystal,ngfft,cplex,nfft,nspden,vemb_r,mpi_enreg)
+
+!PAW part
+ ABI_ALLOCATE(ph1d,(2,3*(2*dtset%mgfft+1)*dtset%natom))
+ call getph(this%crystal%atindx,dtset%natom,dtset%ngfft(1),dtset%ngfft(2),dtset%ngfft(3),ph1d,this%crystal%xred)
+
+!compute cprj
+ ABI_ALLOCATE(dimcprj_srt,(dtset%natom))
+ call pawcprj_getdim(dimcprj_srt,dtset%natom,this%crystal%nattyp,dtset%ntypat,dtset%typat,this%pawtab,'O')
+ mband_cprj=dtset%mband
+ if (dtset%paral_kgb/=0) mband_cprj=mband_cprj/mpi_enreg%nproc_band
+ mcprj=my_nspinor*mband_cprj*dtset%mkmem*dtset%nsppol
+ ABI_DATATYPE_ALLOCATE(cprj_local,(dtset%natom,mcprj))
+ ctocprj_choice = 1
+ call pawcprj_alloc(cprj_local,0,dimcprj_srt)
+ iatom=0 ; iorder_cprj=0 !0: sorted; 1:un-sorted
+ idir = 0
+ call ctocprj(this%crystal%atindx,this%cg,ctocprj_choice,cprj_local,this%crystal%gmet,this%crystal%gprimd,&
+&   iatom,idir,iorder_cprj,dtset%istwfk,kg,dtset%kptns,&
+&   mcg,mcprj,dtset%mgfft,dtset%mkmem,mpi_enreg,this%psps%mpsang,&
+&   dtset%mpw,dtset%natom,this%crystal%nattyp,dtset%nband,dtset%natom,dtset%ngfft,&
+&   dtset%nkpt,dtset%nloalg,npwarr,dtset%nspinor,dtset%nsppol,&
+&   dtset%ntypat,dtset%paral_kgb,ph1d,this%psps,this%crystal%rmet,dtset%typat,&
+&   ucvol,dtfil%unpaw,this%crystal%xred,this%ylm,this%ylmgr)
+
+ ABI_DEALLOCATE(ph1d)
+
+ cprj=> cprj_local
+
+ ABI_DATATYPE_ALLOCATE(pawvij,(dtset%natom))
+ call initrhoij(dtset%pawcpxocc,dtset%lexexch,&
+&   dtset%lpawu,dtset%natom,dtset%natom,dtset%nspden,dtset%nspinor,dtset%nsppol,&
+&   dtset%ntypat,pawvij,dtset%pawspnorb,this%pawtab,dtset%spinat,dtset%typat,&
+&   comm_atom=mpi_enreg%comm_atom,mpi_atmtab=mpi_enreg%my_atmtab)
+
+ call pawmkvij(this%crystal%atindx,this%crystal%atindx1,vemb_can,norb,cprj,dimcprj_srt,&
+&   dtset%istwfk,dtset%mband,mband_cprj,mcprj,dtset%mkmem,mpi_enreg,&
+&   dtset%natom,dtset%nband,dtset%nkpt,dtset%nspinor,dtset%nsppol,dtset%paral_kgb,&
+&   pawvij,dtfil%unpaw)
+
+ ABI_DEALLOCATE(dimcprj_srt)
+
+!symmetrize potential and store it in packed form
+ call symrhoij(pawvij,pawvij,1,this%crystal%gprimd,this%crystal%indsym,0,dtset%natom,dtset%nsym,dtset%ntypat,&
+&   1,this%pawang,dtset%pawprtvol,this%pawtab,this%crystal%rprimd,dtset%symafm,this%crystal%symrec,dtset%typat,&
+&   comm_atom=mpi_enreg%comm_atom,mpi_atmtab=mpi_enreg%my_atmtab)
+
+ call pawrhoij_free_unpacked(pawvij)
+
+!full potential on fine grid
+ ABI_ALLOCATE(vemb_r_paw,(pawfgr%nfft,dtset%nspden))
+ ABI_ALLOCATE(vemb_r_one,(pawfgr%nfft,dtset%nspden))
+ ABI_ALLOCATE(vemb_r_t_one,(pawfgr%nfft,dtset%nspden))
+ ABI_ALLOCATE(nhat_dummy,(pawfgr%nfft,dtset%nspden))
+ vemb_r_paw = zero
+ vemb_r_one = zero
+ vemb_r_t_one = zero
+ nhat_dummy = zero !no use
+ call denfgr(this%crystal%atindx1,this%crystal%gmet,mpi_enreg%comm_fft,dtset%natom,dtset%natom,&
+&   this%crystal%nattyp,ngfftf,nhat_dummy,dtset%nspinor,dtset%nsppol,dtset%nspden,&
+&   dtset%ntypat,pawfgr,this%pawrad,pawvij,this%pawtab,dtset%prtvol,vemb_r,vemb_r_paw,vemb_r_one,&
+&   vemb_r_t_one,this%crystal%rprimd,dtset%typat,ucvol,this%crystal%xred,&
+&   comm_atom=mpi_enreg%comm_atom,mpi_atmtab=mpi_enreg%my_atmtab)
 
 !clean up
+ call pawcprj_free(cprj_local)
+ ABI_DATATYPE_DEALLOCATE(cprj_local)
+
+ call pawrhoij_free(pawvij)
+ ABI_DATATYPE_DEALLOCATE(pawvij)
+
  ABI_DEALLOCATE(vemb_r)
+ ABI_DEALLOCATE(vemb_r_one)
+ ABI_DEALLOCATE(vemb_r_t_one) 
+ ABI_DEALLOCATE(nhat_dummy)
+
+!**********************
+!*  write to disk     *
+!**********************
+ nfft = n1*n2*n3
+ call fftdatar_write("vemb",dtfil%fnameabo_app_vemb,dtset%iomode,hdr,&
+&     crystal,ngfftf,cplex,nfft,dtset%nspden,vemb_r_paw,mpi_enreg)
+
+!clean up
+ ABI_DEALLOCATE(vemb_r_paw)
  ABI_DEALLOCATE(cwavef)
  ABI_DEALLOCATE(wfraug)
  ABI_DEALLOCATE(vemb_can_real)
