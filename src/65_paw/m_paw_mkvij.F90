@@ -214,7 +214,7 @@ subroutine pawaccvij(atindx,cplex,vemb,norb,cwaveprj,cwaveprj1,isppol,my_natom,n
  call get_my_atmtab(my_comm_atom,my_atmtab,my_atmtab_allocated,paral_atom,natom,&
 & my_natom_ref=my_natom)
 
- if(cplex/=2) MSG_BUG(' cwaveprj should be complex!')
+! if(cplex/=2) MSG_BUG(' cwaveprj should be complex!')
 
  if (nspinor==1) then
      cplex_rhoij=pawrhoij(1)%cplex
