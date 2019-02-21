@@ -84,6 +84,10 @@ module m_subscf
 
  use m_results_gs,       only : results_gs_type
 
+ !debug
+! use m_ebands
+! use m_ioarr,            only : fftdatar_write
+
  implicit none
 
  private 
@@ -377,7 +381,8 @@ end subroutine subscf_destroy
 !! CHILDREN
 !!
 !! SOURCE
-subroutine subscf_run(this,can2sub,dim_can,dim_sub,hdr)
+subroutine subscf_run(this,can2sub,dim_can,dim_sub,&
+&                     hdr)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -394,6 +399,7 @@ subroutine subscf_run(this,can2sub,dim_can,dim_sub,hdr)
  integer, intent(in) :: dim_can, dim_sub
  complex(dpc), intent(in) :: can2sub(dim_can,dim_sub)
  integer :: initialized
+
 
 
  initialized = 0
@@ -434,7 +440,8 @@ end subroutine subscf_run
 !!
 !! SOURCE
 subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_enreg,initialized,&
-&                      nfftf,ecore,rhog,rhor,can2sub,dim_can,dim_sub,hdr)
+&                      nfftf,ecore,rhog,rhor,can2sub,dim_can,dim_sub,&
+&                      hdr)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -522,12 +529,17 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
  type(pawcprj_type),allocatable, target :: cprj_local(:,:)
  type(pawrhoij_type),pointer :: pawrhoij_unsym(:)
 
+ !debug
+ integer,save :: icalled = 0
+! type(crystal_t),intent(in) ::crystal_tot
 
  !useless
  real(dp) :: qphon(3),rhopsg_dummy(0,0),rhopsr_dummy(0,0),rhor_dummy(0,0)
  type(efield_type) :: dtefield
 
  write(std_out,*) "Entering subscf_core"
+ icalled = icalled + 1
+
 
  conv_retcode = 0
  initialized0 = initialized
@@ -995,6 +1007,22 @@ endif
        ABI_DEALLOCATE(nhatgr)
      end if
 
+!debug
+!     if(icalled == 3) then 
+!     if(present(hdr)) then
+!       call fftdatar_write("vpsp",this%dtfil%fnameabo_app_vpsp,dtset%iomode,hdr,&
+!&        crystal_tot,ngfftf,1,nfftf,dtset%nspden,vpsp,mpi_enreg)
+!     endif
+!    else
+!       bstruct_tmp = ebands_from_dtset(dtset, this%npwarr)
+!       call hdr_init(bstruct_tmp,codvsn,dtset,hdr_tmp,pawtab,0,psps,this%wvl%descr,&
+!&        comm_atom=this%mpi_enreg%comm_atom,mpi_atmtab=this%mpi_enreg%my_atmtab)
+!       call ebands_free(bstruct_tmp)
+!       call fftdatar_write("vpsp",this%dtfil%fnameabo_app_vpsp,dtset%iomode,hdr_tmp,&
+!&        crystal,ngfftf,1,nfftf,dtset%nspden,vpsp,mpi_enreg)
+!     endif
+!     endif
+!end debug
    endif
 
 

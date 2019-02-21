@@ -221,7 +221,14 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 
  type(pawrhoij_type),pointer :: pawrhoij(:)
 
+!debug
+ integer,save :: icalled = 0 
+! type(crystal_t),intent(in) ::crystal_tot
+
  DBG_ENTER("COLL")
+
+ icalled = icalled + 1
+
 !###########################################################
 !### 01. Initializations XML, MPI, WVL, etc
 

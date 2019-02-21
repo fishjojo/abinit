@@ -915,7 +915,7 @@ subroutine print_vemb(this,dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg
      call dgemm('N','T',norb,n4*n5*n6,norb,one,vemb_can_real,norb,wfraug(1,:,:,:,:),n4*n5*n6,zero,tmpr,norb)
      call dgemm('N','T',norb,n4*n5*n6,norb,one,vemb_can_img,norb,wfraug(2,:,:,:,:),n4*n5*n6,one,tmpr,norb)
      call dgemm('N','T',norb,n4*n5*n6,norb,one,vemb_can_img,norb,wfraug(1,:,:,:,:),n4*n5*n6,zero,tmpi,norb)
-     call dgemm('N','T',norb,n4*n5*n6,norb,-1.0_dp,vemb_can_real,norb,wfraug(2,:,:,:,:),n4*n5*n6,one,tmpi,norb)
+     call dgemm('N','T',norb,n4*n5*n6,norb,-one,vemb_can_real,norb,wfraug(2,:,:,:,:),n4*n5*n6,one,tmpi,norb)
 
 
      do i=1,n6
@@ -1013,7 +1013,7 @@ subroutine print_vemb(this,dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg
  call pawrhoij_free(pawvij)
  ABI_DATATYPE_DEALLOCATE(pawvij)
 
- ABI_DEALLOCATE(vemb_r)
+! ABI_DEALLOCATE(vemb_r)
  ABI_DEALLOCATE(vemb_r_one)
  ABI_DEALLOCATE(vemb_r_t_one) 
  ABI_DEALLOCATE(nhat_dummy)
@@ -1023,7 +1023,7 @@ subroutine print_vemb(this,dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg
 !**********************
  nfft = n1*n2*n3
  call fftdatar_write("vemb",dtfil%fnameabo_app_vemb,dtset%iomode,hdr,&
-&     crystal,ngfftf,cplex,nfft,dtset%nspden,vemb_r_paw,mpi_enreg)
+&     crystal,ngfftf,cplex,nfft,dtset%nspden,vemb_r,mpi_enreg)
 
 !clean up
  ABI_DEALLOCATE(vemb_r_paw)

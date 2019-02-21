@@ -54,6 +54,9 @@ module m_dmfet_oep
    type(coeff2_type),pointer :: P_sub(:)=>null()
    type(dataset_type),pointer :: sub_dtsets(:)=>null()
 
+   !debug
+!   type(hdr_type),pointer :: hdr=>null()
+!   type(crystal_t),pointer :: crystal_tot => null()
 
  end type oep_type
 
@@ -79,6 +82,13 @@ subroutine oep_init(this,scf_inp,P_ref,P_sub,V_emb,opt_algorithm,sub_dtsets,nsub
  real(dp),intent(inout),target :: V_emb(scf_inp%dim_sub,scf_inp%dim_sub)
  type(coeff2_type),intent(inout),target :: P_sub(nsubsys)
  type(dataset_type),intent(inout),target :: sub_dtsets(nsubsys)
+
+ !debug
+! type(hdr_type),intent(inout),target :: hdr
+! type(crystal_t),intent(in),target ::crystal_tot
+
+! this%hdr => hdr
+! this%crystal_tot=>crystal_tot
 
  this%scf_inp=>scf_inp
  this%nsubsys=>nsubsys
@@ -131,7 +141,7 @@ subroutine oep_run(this,wtol,max_cycle)
  tol = 10.0_dp**(-wtol)
  call nlo_set_ftol_abs(ires, opt, tol)
  call nlo_set_maxeval(ires, opt, max_cycle)
- call nlo_set_max_objective(ires, opt, cost_wuyang, this)
+ call nlo_set_min_objective(ires, opt, cost_wuyang, this)
 
  call nlo_optimize(ires, opt, x, minf)
 
@@ -244,10 +254,10 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
  dimP = this%scf_inp%dim_sub
  call vec2mat(x,this%V_emb,dimP)
 
- write(std_out,*) "Vemb:"
- do i=1,dimP
-   write(std_out,*) this%V_emb(i,:)
- enddo
+! write(std_out,*) "Vemb:"
+! do i=1,dimP
+!   write(std_out,*) this%V_emb(i,:)
+! enddo
 
  !subsystem scf
  ABI_ALLOCATE(e_sub,(this%nsubsys))
@@ -259,7 +269,8 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
    call gstate_sub(this%scf_inp%acell,this%sub_dtsets(i),this%scf_inp%psps,this%scf_inp%rprim,&
 &   results(i),this%scf_inp%mpi_enreg,this%scf_inp%dtfil,this%scf_inp%wvl,&
 &   this%scf_inp%cg,this%scf_inp%pawtab,this%scf_inp%pawrad,this%scf_inp%pawang,this%scf_inp%xred,&
-&   this%P_sub(i)%value,this%scf_inp%can2sub,this%scf_inp%dim_suborb,this%scf_inp%dim_sub,emb_pot=this%V_emb)
+&   this%P_sub(i)%value,this%scf_inp%can2sub,this%scf_inp%dim_suborb,this%scf_inp%dim_sub,&
+&   emb_pot=this%V_emb)
 
    e_sub(i) = results(i)%etotal
    write(std_out,*) "energy of subsystem ",i,": ",e_sub(i)
@@ -275,6 +286,8 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
 
  write(std_out,*) "objective function value:", f
 
+ f = -1.0_dp*f
+
  ABI_DEALLOCATE(e_sub)
 
  !gradient
@@ -287,6 +300,7 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
    enddo
    diffP = diffP - this%P_ref
    call mat2vec(grad,diffP,dimP)
+   grad = -1.0_dp*grad
    write(std_out,*) "max component of gradient:", maxval(abs(grad))
    ABI_DEALLOCATE(diffP)
  endif

@@ -62,7 +62,7 @@ subroutine pawmkvij(atindx,atindx1,vemb,norb,cprj,dimcprj,istwfk,mband,mband_cpr
 !Local variables ---------------------------------------
 !scalars
  integer :: ibg,ikpt,iorder_cprj,isppol,nband_k,nrhoij
- integer :: me,spaceComm,my_nspinor
+ integer :: me,spaceComm,my_nspinor,cplex
  logical :: paral_atom
  character(len=500) :: msg
 
@@ -125,7 +125,7 @@ subroutine pawmkvij(atindx,atindx1,vemb,norb,cprj,dimcprj,istwfk,mband,mband_cpr
 !  LOOP OVER k POINTS
    do ikpt=1,nkpt
 
-     if (istwfk(ikpt)>1) MSG_BUG(' istwfk should <= 1')
+     cplex = 2;if (istwfk(ikpt)>1) cplex=1
      nband_k=nband(ikpt+(isppol-1)*nkpt)
 
      cprj_ptr => cprj
@@ -134,7 +134,7 @@ subroutine pawmkvij(atindx,atindx1,vemb,norb,cprj,dimcprj,istwfk,mband,mband_cpr
 &      mband_cprj,mkmem,natom,norb,nband_k,nspinor,nsppol,unpaw,&
 &      mpicomm=mpi_enreg%comm_kpt,proc_distrb=mpi_enreg%proc_distrb)
 
-     call pawaccvij(atindx,2,vemb,norb,cwaveprj,cwaveprj,isppol,nrhoij,natom,nspinor,pawrhoij_all)
+     call pawaccvij(atindx,cplex,vemb,norb,cwaveprj,cwaveprj,isppol,nrhoij,natom,nspinor,pawrhoij_all)
 
    enddo !ikpt
  enddo !isppol
