@@ -429,7 +429,7 @@ subroutine outscfcv(atindx1,cg,compch_fft,compch_sph,cprj,dimcprj,dmatpawu,dtfil
  if (iwrite_fftdatar(mpi_enreg) .and. dtset%usewvl==0) then
 
    ! output the density.
-   if (dtset%prtden/=0) then
+   if (dtset%prtden==1) then !Xing changed
      if (dtset%positron/=1) rho_ptr => rhor
      if (dtset%positron==1) rho_ptr => electronpositron%rhor_ep
      call fftdatar_write("density",dtfil%fnameabo_app_den,dtset%iomode,hdr,&
@@ -538,6 +538,9 @@ subroutine outscfcv(atindx1,cg,compch_fft,compch_sph,cprj,dimcprj,dmatpawu,dtfil
        if (pawprtden==2.or.pawprtden==5) rhor_paw = rhor_paw + rhor_paw_core
 !      PAWDEN
        call fftdatar_write("pawrhor",dtfil%fnameabo_app_pawden,dtset%iomode,hdr,&
+       crystal,ngfft,cplex1,nfft,nspden,rhor_paw,mpi_enreg,ebands=ebands)
+       !Xing
+       call fftdatar_write("density",dtfil%fnameabo_app_den,dtset%iomode,hdr,&
        crystal,ngfft,cplex1,nfft,nspden,rhor_paw,mpi_enreg,ebands=ebands)
      end if
 

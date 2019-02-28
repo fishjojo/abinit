@@ -96,7 +96,8 @@ module m_dmfet
 
    complex(dpc),allocatable :: can2sub(:,:)
    real(dp), allocatable ::  occ_wan(:)
-   integer :: n_canonical, dim_all, dim_sub, n_frozen
+   real(dp), allocatable :: sub_occ(:)
+   integer :: n_canonical, dim_all, dim_imp,dim_sub, n_frozen
 
    type(wvl_data),pointer :: wvl => null()
 
@@ -313,7 +314,7 @@ subroutine dmfet_subspac(this)
  integer,allocatable :: dimcprj(:)
  real(dp),allocatable :: ph1d(:,:)
 
-
+ integer :: nband
  integer :: ngfft(18)
  integer :: usecprj,mband_cprj,mcprj,my_nspinor
  integer :: iatom,idir,iorder_cprj,ctocprj_choice,ncpgr
@@ -346,13 +347,24 @@ subroutine dmfet_subspac(this)
 
 
  call init_plowannier(this%dtset,wan)
- this%dim_all = wan%size_wan
+ !this%dim_all = wan%size_wan
  this%n_canonical = wan%bandf_wan-wan%bandi_wan+1
 
  call compute_coeff_plowannier(this%crystal,cprj,dimcprj,this%dtset,this%eigen,this%e_fermie,&
 &     this%mpi_enreg,this%occ,wan,this%pawtab,this%psps,usecprj,this%dtfil%unpaw,this%pawrad,this%dtfil)
 
- call dmfet_wan2sub(this,wan)
+
+ nband = this%n_canonical
+ ABI_ALLOCATE(this%can2sub,(nband,nband))
+ ABI_ALLOCATE(this%sub_occ,(nband))
+ 
+ call get_can2sub(wan,1,this%occ,nband,this%can2sub,this%sub_occ,this%dim_imp,this%dim_sub,this%dim_all)
+ write(std_out,*) 'dim_imp = ', this%dim_imp
+ write(std_out,*) 'dim_sub = ', this%dim_sub
+ write(std_out,*) 'dim_all = ', this%dim_all
+
+
+! call dmfet_wan2sub(this,wan)
 
  call destroy_plowannier(wan)
 
@@ -573,11 +585,17 @@ subroutine dmfet_core(this,rprim,codvsn)
  dim_sub = this%dim_all !use all of sub orbitals for now
  ABI_ALLOCATE(dens_tot,(dim_sub,dim_sub))
 
+!test can2sub as unit matrix
+! this%can2sub = czero
+! do i=1,this%dim_all
+!   this%can2sub(i,i) = cmplx(one,zero,kind=dp)
+! enddo
+
  !total scf calc in subspace
  call init_results_gs(this%dtset%natom,this%dtset%nsppol,res_tot)
  call gstate_sub(this%acell,this%dtset,this%psps,rprim,res_tot,this%mpi_enreg,this%dtfil,this%wvl,&
 & this%cg,this%pawtab,this%pawrad,this%pawang,this%crystal%xred,&
-& dens_tot,this%can2sub,this%dim_all,dim_sub,hdr=hdr) 
+& dens_tot,this%can2sub,this%n_canonical,dim_sub,hdr=hdr) 
 
 
  nsubsys = this%dtset%nsubsys
@@ -593,14 +611,14 @@ subroutine dmfet_core(this,rprim,codvsn)
  enddo
 
  call gstate_sub_input_var_init(scf_inp,this%acell,rprim,this%crystal%xred,this%dtset%natom,this%mcg,this%psps,this%mpi_enreg,&
-& this%dtfil,this%wvl,this%cg,this%pawtab,this%pawrad,this%pawang,this%can2sub,this%dim_all,dim_sub)
+& this%dtfil,this%wvl,this%cg,this%pawtab,this%pawrad,this%pawang,this%can2sub,this%n_canonical,dim_sub)
 
  call oep_init(oep_args,scf_inp,dens_tot,dens_sub,emb_pot,opt_algorithm,sub_dtsets,nsubsys)
  call oep_run(oep_args,this%dtset%vemb_opt_w_tol,this%dtset%vemb_opt_cycle)
 
 
- call print_vemb(this,this%dtset,hdr,this%dtfil,this%crystal,this%mpi_enreg,this%pawfgr,this%kg,this%npwarr,&
-& this%cg,this%mcg,oep_args%V_emb,this%can2sub,this%dim_all,dim_sub,this%crystal%ucvol)
+! call print_vemb(this,this%dtset,hdr,this%dtfil,this%crystal,this%mpi_enreg,this%pawfgr,this%kg,this%npwarr,&
+!& this%cg,this%mcg,oep_args%V_emb,this%can2sub,this%n_canonical,dim_sub,this%crystal%ucvol)
 
  call destroy_oep(oep_args)
 
@@ -830,7 +848,7 @@ subroutine print_vemb(this,dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg
  type(pawcprj_type),pointer :: cprj(:,:)
  type(pawcprj_type),allocatable, target :: cprj_local(:,:)
  type(pawrhoij_type),allocatable :: pawvij(:)
- real(dp),allocatable :: vemb_r(:,:),vemb_r_paw(:,:),vr(:,:,:)
+ real(dp),allocatable :: vemb_r(:,:),vemb_r_paw(:,:),vr(:,:,:),vi(:,:,:)
  real(dp),allocatable :: vemb_r_one(:,:),vemb_r_t_one(:,:),nhat_dummy(:,:)
  real(dp),allocatable :: vemb_can_real(:,:),vemb_can_img(:,:)
  real(dp),allocatable :: cwavef(:,:,:),wfraug(:,:,:,:,:)
@@ -859,6 +877,8 @@ subroutine print_vemb(this,dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg
  call zgemm('N','C',norb,norb,nsub,cone,tmp,norb,can2sub,norb,czero,vemb_can,norb)
  ABI_DEALLOCATE(tmp)
  ABI_DEALLOCATE(vemb_cpl)
+
+ write(std_out,*) " max abs imaginary vemb_can element:", maxval(abs(aimag(vemb_can)))
 !end transformation
 
  my_nspinor=max(1,dtset%nspinor/mpi_enreg%nproc_spinor)
@@ -882,6 +902,9 @@ subroutine print_vemb(this,dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg
  do isppol=1,dtset%nsppol
    ABI_ALLOCATE(vr,(n4,n5,n6))
    vr = zero
+!   ABI_ALLOCATE(vi,(n4,n5,n6))
+!   vi = zero
+
    ikg=0
    do ikpt=1,dtset%nkpt
 
@@ -923,6 +946,8 @@ subroutine print_vemb(this,dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg
          do k=1,n4
            vr(k,j,i) = vr(k,j,i) + dot_product(wfraug(1,k,j,i,:), tmpr(:,k+(j-1)*n4+(i-1)*n5*n4) )
            vr(k,j,i) = vr(k,j,i) - dot_product(wfraug(2,k,j,i,:), tmpi(:,k+(j-1)*n4+(i-1)*n5*n4) )
+!           vi(k,j,i) = vi(k,j,i) + dot_product(wfraug(1,k,j,i,:), tmpi(:,k+(j-1)*n4+(i-1)*n5*n4) )
+!           vi(k,j,i) = vi(k,j,i) + dot_product(wfraug(2,k,j,i,:), tmpr(:,k+(j-1)*n4+(i-1)*n5*n4) )
          enddo
        enddo
      enddo
@@ -939,8 +964,10 @@ subroutine print_vemb(this,dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg
 !   write(std_out,*) "max(vemb_r_aug)=",maxval(vr)
 !   write(std_out,*) "max(vemb_r)=",maxval(vemb_r)
 
-   ABI_DEALLOCATE(vr)
+!   write(std_out,*) " max abs imaginary vemb_r element:", maxval(abs(vi))
 
+   ABI_DEALLOCATE(vr)
+!   ABI_DEALLOCATE(vi)
  enddo !isppol
 
 

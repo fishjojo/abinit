@@ -83,7 +83,7 @@ module m_gstate_sub
 
    type(wvl_data),pointer :: wvl => null()
 
-   integer, pointer :: dim_suborb=>null()  !length of subspace basis orbitals
+   integer, pointer :: dim_can=>null()  !length of subspace basis orbitals
    integer, pointer :: dim_sub=>null() !dimension of subspace
    real(dp), pointer :: acell(:)=>null()
    real(dp), pointer :: rprim(:,:)=>null()
@@ -96,7 +96,7 @@ module m_gstate_sub
 contains
 
 subroutine gstate_sub_input_var_init(this,acell,rprim,xred,natom,mcg,psps,mpi_enreg,dtfil,wvl,&
-& cg,pawtab,pawrad,pawang,can2sub,dim_suborb,dim_sub)
+& cg,pawtab,pawrad,pawang,can2sub,dim_can,dim_sub)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -117,12 +117,12 @@ subroutine gstate_sub_input_var_init(this,acell,rprim,xred,natom,mcg,psps,mpi_en
  type(pawrad_type),intent(in),target :: pawrad(psps%ntypat*psps%usepaw)
  type(pawang_type),intent(in),target :: pawang
 
- integer, intent(in),target :: natom,mcg,dim_suborb,dim_sub
+ integer, intent(in),target :: natom,mcg,dim_can,dim_sub
  real(dp),intent(in),target :: acell(3)
  real(dp),intent(in),target :: rprim(3,3)
  real(dp),intent(in),target :: xred(3,natom)
  real(dp),intent(in),target :: cg(2,mcg)
- complex(dpc),intent(in),target :: can2sub(dim_suborb,dim_sub)
+ complex(dpc),intent(in),target :: can2sub(dim_can,dim_sub)
 
  this%psps=>psps
  this%mpi_enreg=>mpi_enreg
@@ -131,7 +131,7 @@ subroutine gstate_sub_input_var_init(this,acell,rprim,xred,natom,mcg,psps,mpi_en
  this%pawtab=>pawtab
  this%pawrad=>pawrad
  this%pawang=>pawang
- this%dim_suborb=>dim_suborb
+ this%dim_can=>dim_can
  this%dim_sub=>dim_sub
  this%acell=>acell
  this%rprim=>rprim
@@ -199,6 +199,7 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  integer :: mcprj,mband_cprj,ncpgr,itypat
  integer :: cnt,spin,ikpt,band,my_nspinor,mcg
  integer :: use_sc_dmft,pwind_alloc !useless
+ integer :: iband
  integer,parameter :: formeig=0,level=101,response=0 ,cplex1=1, master=0
 
  real(dp) :: ecut_eff,ecutdg_eff, gsqcut_eff,gsqcutc_eff,gsqcut_shp,hyb_range_fock
@@ -345,10 +346,13 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  end if
 
 
- !simply use default occ
- ABI_ALLOCATE(occ,(dtset%mband*dtset%nkpt*dtset%nsppol))
- occ(:) = dtset%occ_orig(:,1)
-
+ !simply use default occ FIXME
+ ABI_ALLOCATE(occ,(dim_sub*dtset%nkpt*dtset%nsppol))
+ occ =zero
+! occ(:) = dtset%occ_orig(:,1)
+ do iband=1,int(dtset%nelect)/2
+   occ(iband) = 2.0_dp
+ enddo
 
  if(present(hdr))then
    call hdr_update(hdr,bantot,hdr%etot,hdr%fermie,&

@@ -78,7 +78,7 @@ subroutine oep_init(this,scf_inp,P_ref,P_sub,V_emb,opt_algorithm,sub_dtsets,nsub
  type(gstate_sub_input_var),intent(in),target :: scf_inp
 
  integer,intent(in),target :: opt_algorithm,nsubsys
- real(dp),intent(in),target :: P_ref(scf_inp%dim_suborb,scf_inp%dim_suborb)
+ real(dp),intent(in),target :: P_ref(scf_inp%dim_sub,scf_inp%dim_sub)
  real(dp),intent(inout),target :: V_emb(scf_inp%dim_sub,scf_inp%dim_sub)
  type(coeff2_type),intent(inout),target :: P_sub(nsubsys)
  type(dataset_type),intent(inout),target :: sub_dtsets(nsubsys)
@@ -250,7 +250,7 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
 
  type(results_gs_type),allocatable :: results(:)
 
- dim_can = this%scf_inp%dim_suborb
+ dim_can = this%scf_inp%dim_can
  dimP = this%scf_inp%dim_sub
  call vec2mat(x,this%V_emb,dimP)
 
@@ -269,7 +269,7 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
    call gstate_sub(this%scf_inp%acell,this%sub_dtsets(i),this%scf_inp%psps,this%scf_inp%rprim,&
 &   results(i),this%scf_inp%mpi_enreg,this%scf_inp%dtfil,this%scf_inp%wvl,&
 &   this%scf_inp%cg,this%scf_inp%pawtab,this%scf_inp%pawrad,this%scf_inp%pawang,this%scf_inp%xred,&
-&   this%P_sub(i)%value,this%scf_inp%can2sub,this%scf_inp%dim_suborb,this%scf_inp%dim_sub,&
+&   this%P_sub(i)%value,this%scf_inp%can2sub,dim_can,dimP,&
 &   emb_pot=this%V_emb)
 
    e_sub(i) = results(i)%etotal

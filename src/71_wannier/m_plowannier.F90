@@ -50,6 +50,7 @@ MODULE m_plowannier
  public :: build_subspace
  public :: canonical_to_sub
  public :: compute_oper_ks2sub
+ public :: get_can2sub
 !!***
 
 
@@ -684,7 +685,7 @@ end subroutine destroy_orbital
 !!  dtfil
 !!
 !! OUTPUT
-!!  wan%psichi: projections <Psi|chi>
+!!  wan%psichi: projections <chi|Psi>
 !!
 !! SIDE EFFECTS
 !!  (only writing, printing)
@@ -3039,6 +3040,290 @@ subroutine test_unitary(wan,mat,matT,ikpt)
 end subroutine test_unitary
 
 
+subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_all)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'get_can2sub'
+!End of the abilint section
+
+  implicit none
+
+  type(plowannier_type), intent(in) :: wan
+  integer, intent(in) :: ikpt,nband
+  integer,intent(inout) :: dim_imp,dim_sub,dim_all
+  real(dp),intent(in) :: occ(:)
+  real(dp),intent(inout) :: sub_occ(nband)
+  complex(dpc),intent(inout) :: can2sub(nband,nband)
+
+  integer :: dim_bath
+  integer :: i,j,ioff,icount
+  integer :: isppol,iatom1,il1,im1,iband1,iband2
+  integer,allocatable :: arg_imp(:),arg_bath(:)
+
+  real(dp) :: nelec,fac,dot
+  real(dp) :: tmp1
+  real(dp), allocatable :: imp_occ(:), bath_occ(:), rwork(:)
+  real(dp), allocatable :: imp_occ_srt(:),bath_occ_srt(:)
+
+  complex(dpc),allocatable :: Vij(:,:,:),Vij_copy(:,:,:),VTV(:,:,:)
+  complex(dpc),allocatable :: U_imp(:,:), U_bath(:,:)
+  complex(dpc),allocatable :: tmp(:,:)
+
+  complex(dpc), allocatable :: zwork(:)
+  integer :: lwork,info
+
+  !nband = wan%bandf_wan-wan%bandi_wan+1
+
+  ABI_ALLOCATE(Vij,(nband,nband,wan%nsppol))
+  Vij = czero
+
+  do iband1 = 1,nband
+    do iband2 = 1,nband
+      do isppol = 1,wan%nsppol
+        do iatom1 = 1,wan%natom_wan
+          do il1 = 1,wan%nbl_atom_wan(iatom1)
+            do im1 = 1,2*wan%latom_wan(iatom1)%lcalc(il1)+1
+               !!sum over AOs
+               Vij(iband1,iband2,isppol) = Vij(iband1,iband2,isppol) &
+               &  +conjg(wan%psichi(ikpt,iband1,iatom1)%atom(il1)%matl(im1,isppol,1))&
+               &  *wan%psichi(ikpt,iband2,iatom1)%atom(il1)%matl(im1,isppol,1)
+            end do
+          end do
+        end do
+      end do
+    end do
+  end do
+
+  ABI_ALLOCATE(Vij_copy,(nband,nband,wan%nsppol))
+  Vij_copy = Vij
+
+  do isppol = 1,wan%nsppol
+    do iband1=1,nband
+      do iband2=1,nband
+        fac = dsqrt(occ(iband1)*occ(iband2))
+        Vij(iband1,iband2,isppol) = Vij(iband1,iband2,isppol) * fac
+      enddo
+    enddo
+  enddo
+
+  ABI_ALLOCATE(imp_occ,(nband))
+  ABI_ALLOCATE(rwork,(3*nband-2))
+  lwork = 65*nband !Value to optimize the diagonalization
+  ABI_ALLOCATE(zwork,(lwork))
+  call zheev('v','u',nband,Vij(:,:,1),nband,imp_occ,zwork,lwork,rwork,info)
+
+  !remove numerical noise
+  do i=1,nband
+    if(imp_occ(i)<zero) imp_occ(i)=zero
+    if(imp_occ(i)>2.0_dp) imp_occ(i)=2.0_dp
+  enddo
+
+  dim_imp = wan%size_wan
+
+  ioff = nband - dim_imp + 1
+  if(imp_occ(ioff-1) > tol8) MSG_ERROR(" Something is wrong!") 
+  if(imp_occ(ioff) < tol8) MSG_WARNING("Empty orbitals in embedded region!")
+
+  !sort eigenvalues
+  ABI_ALLOCATE(imp_occ_srt,(dim_imp))
+  imp_occ_srt = imp_occ(ioff:nband)
+  do i=1,dim_imp
+    imp_occ_srt(i) = max(-imp_occ_srt(i), imp_occ_srt(i)-2.0)
+  enddo
+
+  ABI_ALLOCATE(arg_imp,(dim_imp))
+  call dsortp(imp_occ_srt,1,dim_imp,arg_imp)
+  do i=1,dim_imp
+    imp_occ_srt(i) = imp_occ(arg_imp(i)+ioff-1)
+  enddo
+
+  !remove rounding error
+  do i=1,dim_imp
+    if(abs(imp_occ_srt(i)-2.0_dp)<tol8) imp_occ_srt(i)=2.0_dp
+  enddo
+  write(std_out,*) "imp_occ:"
+  write(std_out,*) imp_occ_srt(:)
+
+  ABI_DEALLOCATE(imp_occ)
+
+  ABI_ALLOCATE(U_imp,(nband,dim_imp))
+  do i=1,dim_imp
+    U_imp(:,i) = Vij(:,arg_imp(i)+ioff-1,1)
+  enddo
+  ABI_DEALLOCATE(arg_imp)
+
+!*********************************************
+! bath part
+!*********************************************
+  ABI_ALLOCATE(VTV,(nband,nband,wan%nsppol))
+  VTV = -Vij_copy
+  do iband1=1,nband
+    VTV(iband1,iband1,1) = one + VTV(iband1,iband1,1)
+  enddo
+
+  Vij=VTV
+  call zgemm('C','N',nband,nband,nband,cone,Vij(:,:,1),nband,Vij(:,:,1),nband,czero,VTV(:,:,1),nband)
+
+  do iband1=1,nband
+    do iband2=1,nband
+      fac = dsqrt(occ(iband1)*occ(iband2))
+      VTV(iband1,iband2,1) = VTV(iband1,iband2,1) * fac
+    enddo
+  enddo
+
+  ABI_ALLOCATE(bath_occ,(nband))
+  call zheev('v','u',nband,VTV(:,:,1),nband,bath_occ,zwork,lwork,rwork,info)
+
+  ABI_DEALLOCATE(rwork)
+  ABI_DEALLOCATE(zwork)
+
+  !remove numerical noise
+  do i=1,nband
+    if(bath_occ(i)<zero) bath_occ(i)=zero
+    if(bath_occ(i)>2.0_dp) bath_occ(i)=2.0_dp
+  enddo
+
+  ioff = dim_imp + 1
+  if(bath_occ(ioff-1) > tol8) MSG_ERROR("Something is wrong!")
+
+  icount = 0
+  do i=ioff,nband
+    if(bath_occ(i) < tol8 ) icount = icount + 1  !remove empty states
+  enddo
+  ioff = ioff + icount
+
+  !sort eigenvalues
+  dim_bath = nband - dim_imp - icount
+  ABI_ALLOCATE(bath_occ_srt,(dim_bath))
+  bath_occ_srt = bath_occ(ioff:nband)
+  do i=1,dim_bath
+    bath_occ_srt(i) = max(-bath_occ_srt(i), bath_occ_srt(i)-2.0)
+  enddo
+
+  ABI_ALLOCATE(arg_bath,(dim_bath))
+  call dsortp(bath_occ_srt,1,dim_bath,arg_bath)
+  do i=1,dim_bath
+    bath_occ_srt(i) = bath_occ(arg_bath(i)+ioff-1)
+  enddo
+
+  !remove rounding error
+  do i=1,dim_bath
+    if(abs(bath_occ_srt(i)-2.0_dp)<tol8) bath_occ_srt(i)=2.0_dp
+  enddo
+  write(std_out,*) "bath_occ:"
+  write(std_out,*) bath_occ_srt(:)
+
+  ABI_DEALLOCATE(bath_occ)
+
+  ABI_ALLOCATE(U_bath,(nband,dim_bath))
+  do i=1,dim_bath
+    U_bath(:,i) = VTV(:,arg_bath(i)+ioff-1,1)
+  enddo
+  ABI_DEALLOCATE(arg_bath)
+  ABI_DEALLOCATE(VTV) 
+ 
+  dim_all = dim_imp+dim_bath
+
+!*********************************************
+! compute can2sub
+!*********************************************
+  Vij = Vij_copy
+  do i=1,nband
+    Vij(:,i,1) = Vij(:,i,1) * dsqrt(occ(i))
+  enddo 
+
+  can2sub = czero
+  call zgemm('N','N',nband,dim_imp,nband,cone,Vij(:,:,1),nband,U_imp,nband,czero,can2sub(:,1:dim_imp),nband)
+  ABI_DEALLOCATE(U_imp)
+  do i=1,dim_imp
+    can2sub(:,i) = can2sub(:,i) / dsqrt(imp_occ_srt(i))
+  enddo
+
+  !renormalize 
+  do i=1,dim_imp
+    dot = real(dot_product(can2sub(:,i),can2sub(:,i)))
+    can2sub(:,i) = can2sub(:,i)/dsqrt(dot)
+  enddo
+
+
+  Vij = -Vij_copy
+  do i=1,nband
+    Vij(i,i,1) = one + Vij(i,i,1) 
+  enddo
+
+  do i=1,nband
+    Vij(:,i,1) = Vij(:,i,1) * dsqrt(occ(i))
+  enddo
+
+  call zgemm('N','N',nband,dim_bath,nband,cone,Vij(:,:,1),nband,U_bath,nband,czero,can2sub(:,dim_imp+1:dim_all),nband) 
+  ABI_DEALLOCATE(U_bath)
+  ABI_DEALLOCATE(Vij)
+  ABI_DEALLOCATE(Vij_copy)
+  do i=1,dim_bath
+    can2sub(:,i+dim_imp) = can2sub(:,i+dim_imp) / dsqrt(bath_occ_srt(i))
+  enddo
+
+  !renormalize 
+  do i=1,dim_bath
+    dot = real(dot_product(can2sub(:,dim_imp+i),can2sub(:,dim_imp+i)))
+    can2sub(:,dim_imp+i) = can2sub(:,dim_imp+i)/dsqrt(dot)
+  enddo
+
+
+
+  ABI_ALLOCATE(tmp,(dim_all,dim_all))
+  call zgemm('C','N',dim_all,dim_all,nband,cone,can2sub,nband,can2sub,nband,czero,tmp,dim_all)
+
+  do i=1,dim_all
+    if(abs(tmp(i,i)-one) > tol8) then
+      write(std_out,*) 'diag:',tmp(i,i)
+      MSG_ERROR('subspace orbitals not normalized!')
+    endif
+    do j =i+1,dim_all
+      if(abs(tmp(i,j)) > tol8) then
+        write(std_out,*) "ovlp:",i,j,tmp(i,j)
+        MSG_ERROR('subspace orbitals not orthogonal!')
+      endif
+    enddo
+  enddo
+  ABI_DEALLOCATE(tmp)
+
+
+  nelec = 0.0_dp
+  do i=1,dim_imp
+    nelec=nelec+imp_occ_srt(i)
+  enddo
+  do i=1,dim_bath
+    nelec=nelec+bath_occ_srt(i)
+  enddo
+
+  write(std_out,*) 'imp_occ + bath_occ = ',nelec 
+
+
+  dim_sub = 0
+  do i=1,min(dim_imp,dim_bath)
+    tmp1 = imp_occ_srt(i) + bath_occ_srt(i)
+    if(tmp1.lt.2.01 .and. tmp1.gt.1.99) then !a pair of entangled orbitals
+       dim_sub = dim_sub + 1
+    else
+       exit
+    endif
+  enddo
+  dim_sub = dim_sub + dim_imp
+
+  sub_occ = zero
+  sub_occ(1:dim_imp) = imp_occ_srt(:)
+  sub_occ(dim_imp+1:dim_all) = bath_occ_srt(:)
+
+  ABI_DEALLOCATE(imp_occ_srt)
+  ABI_DEALLOCATE(bath_occ_srt)
+
+end subroutine get_can2sub
+
+
 subroutine build_subspace(onedm,loc2sub,occ,dim_imp,dim_all,dim_sub,n_full)
 
 
@@ -3090,9 +3375,8 @@ subroutine build_subspace(onedm,loc2sub,occ,dim_imp,dim_all,dim_sub,n_full)
     imp_occ_srt(i) = imp_occ(arg_imp(i))
   enddo 
 
-  write(ab_out,*) "debug: imp_occ"
-  write(ab_out,*) imp_occ_srt(:)
-
+  write(std_out,*) "imp_occ:"
+  write(std_out,*) imp_occ_srt(:)
 
 !bath
   dim_bath = dim_all-dim_imp

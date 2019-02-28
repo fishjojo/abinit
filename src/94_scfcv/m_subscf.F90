@@ -216,7 +216,7 @@ subroutine subscf_init(this,dtfil,dtset,psps,results_gs,crystal,nfftf,&
  integer, intent(in) :: dim_sub
 
 
- real(dp),intent(in),target :: occ(dtset%mband*dtset%nkpt*dtset%nsppol)
+ real(dp),intent(in),target :: occ(dim_sub*dtset%nkpt*dtset%nsppol)
  real(dp),intent(in),target :: ylm(dtset%mpw*dtset%mkmem,psps%mpsang*psps%mpsang*psps%useylm)
  real(dp),intent(in),target :: ylmgr(dtset%mpw*dtset%mkmem,3,psps%mpsang*psps%mpsang*psps%useylm)
  real(dp),intent(in),target :: cg(2,mcg),ecore
@@ -589,7 +589,7 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
 !  usecprj=1
 ! end if
 
- write(std_out,*) "debug: dtset%iscf = ",dtset%iscf
+! write(std_out,*) "debug: dtset%iscf = ",dtset%iscf
 
  iscf10=mod(dtset%iscf,10)
  tollist(1)=dtset%tolmxf;tollist(2)=dtset%tolwfr
@@ -1371,6 +1371,7 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
 
  !arrays
  integer,allocatable :: kg_k(:,:)
+ integer :: nband_sub(dtset%nkpt*dtset%nsppol)
  real(dp) :: rhodum(1),kpoint(3),ylmgr_dum(0,0,0),qpt(3)
  real(dp), allocatable :: ylm_k(:,:),kinpw(:),kpg_k(:,:),subham(:)
  type(gs_hamiltonian_type) :: gs_hamk
@@ -1563,12 +1564,18 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
 
  ABI_DEALLOCATE(vlocal)
 
- ABI_ALLOCATE(doccde,(dtset%mband*dtset%nkpt*dtset%nsppol))
+ ABI_ALLOCATE(doccde,(dim_sub*dtset%nkpt*dtset%nsppol))
+ nband_sub(:) = dim_sub
  doccde(:)=zero
 
+! call newocc(doccde,this%eig_sub,energies%entropy,energies%e_fermie,dtset%spinmagntarget,&
+!& dtset%mband,dtset%nband,dtset%nelect,dtset%nkpt,dtset%nspinor,&
+!& dtset%nsppol,this%occ,dtset%occopt,dtset%prtvol,dtset%stmbias,dtset%tphysel,dtset%tsmear,dtset%wtk)
+
  call newocc(doccde,this%eig_sub,energies%entropy,energies%e_fermie,dtset%spinmagntarget,&
-& dtset%mband,dtset%nband,dtset%nelect,dtset%nkpt,dtset%nspinor,&
+& dim_sub,nband_sub,dtset%nelect,dtset%nkpt,dtset%nspinor,&
 & dtset%nsppol,this%occ,dtset%occopt,dtset%prtvol,dtset%stmbias,dtset%tphysel,dtset%tsmear,dtset%wtk)
+
 
  ABI_DEALLOCATE(doccde)
 
@@ -1585,13 +1592,23 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  dens_mat = czero
  call zgemm('N','N',dim_sub,dim_sub,dim_sub,cone,this%subham_sub,dim_sub,tmp,dim_sub,czero,dens_mat,dim_sub)
 
+ ABI_DEALLOCATE(tmp)
+
+ ABI_ALLOCATE(tmp_img,(dim_sub,dim_sub))
+ tmp_img = aimag(dens_mat)
+ if(maxval(abs(tmp_img)).gt.tol8) then
+   MSG_WARNING(' Density matrix is not real!') 
+   write(std_out,*) " max abs imaginary element:", maxval(abs(tmp_img))
+!   do ii=1,dim_sub
+!     write(std_out,'(*(F9.6))') tmp_img(ii,:)
+!   enddo
+ endif
+ ABI_DEALLOCATE(tmp_img)
 
  this%dens_mat_real = real(dens_mat,kind=dp)
 ! do ii=1,dim_sub
 !   write(std_out,*) this%dens_mat_real(ii,:)
 ! enddo
-
- ABI_DEALLOCATE(tmp)
  ABI_DEALLOCATE(dens_mat)
 
  ABI_ALLOCATE(tmp,(dim_can,dim_sub))
@@ -1603,14 +1620,14 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  tmp_real = real(tmp,kind=dp)
  tmp_img = aimag(tmp)
 
- !write(std_out,*) "debug: U*C:"
- !do ii=1,dim_sub
- !  write(std_out,*) tmp(ii,:)
- !enddo
-
- ABI_DEALLOCATE(tmp) 
+! write(std_out,*) "debug: U*C:"
+! do ii=1,dim_sub
+!   write(std_out,*) tmp(ii,:)
+! enddo
+ ABI_DEALLOCATE(tmp)
+ 
  call dgemm('N','N',dtset%mpw,dim_sub,dim_can,one,this%cg(1,:),dtset%mpw,tmp_real,dim_can,zero,cg_new(1,:),dtset%mpw)
- call dgemm('N','N',dtset%mpw,dim_sub,dim_can,-1.0_dp,this%cg(2,:),dtset%mpw,tmp_img,dim_can,one,cg_new(1,:),dtset%mpw)
+ call dgemm('N','N',dtset%mpw,dim_sub,dim_can,-one,this%cg(2,:),dtset%mpw,tmp_img,dim_can,one,cg_new(1,:),dtset%mpw)
  call dgemm('N','N',dtset%mpw,dim_sub,dim_can,one,this%cg(1,:),dtset%mpw,tmp_img,dim_can,zero,cg_new(2,:),dtset%mpw)
  call dgemm('N','N',dtset%mpw,dim_sub,dim_can,one,this%cg(2,:),dtset%mpw,tmp_real,dim_can,one,cg_new(2,:),dtset%mpw)
 
@@ -1800,6 +1817,7 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,isppol,ikpt,nband_k,&
 &          dtset%nsppol,dtset%ortalg,dtset%prtvol,this%pwind,this%pwind_alloc,this%pwnsfac,pwnsfacq,quit,resid_k,&
 &          subham,subovl,subvnl,dtset%tolrde,dtset%tolwfr,use_subovl,wfoptalg,zshift)
 
+ ABI_DEALLOCATE(resid_k)
 
  ABI_ALLOCATE(subham_full,(nband_k,nband_k))
  isubh = 1
@@ -1809,19 +1827,26 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,isppol,ikpt,nband_k,&
        subham_full(ii,iband)=cmplx(subham(isubh),subham(isubh+1),kind=dp)
        subham_full(iband,ii)=cmplx(subham(isubh),-subham(isubh+1),kind=dp)
      else
-       if(abs(subham(isubh+1)).gt.1.d-8) MSG_ERROR('hamiltonian is not hermitian!') 
+       if(abs(subham(isubh+1)).gt.1.d-8) MSG_ERROR(' Hamiltonian is not Hermitian!') 
        subham_full(ii,iband)=cmplx(subham(isubh),0.0,kind=dp) 
      endif
      isubh=isubh+2
    enddo
  enddo
 
+ write(std_out,*)" max abs imaginary subham_can element:",maxval(abs(aimag(subham_full)))
+
  call compute_oper_ks2sub(subham_full,this%subham_sub,can2sub,nband_k,dim_sub)
+
+ write(std_out,*)" max abs imaginary subham_sub element:",maxval(abs(aimag(this%subham_sub)))
+! do ii=1,dim_sub
+!   write(std_out,*) this%subham_sub(ii,:)
+! enddo
 
  if(this%has_embpot) then
    do iband=1,dim_sub
      do ii=1,dim_sub
-       this%subham_sub(iband,ii) = this%subham_sub(iband,ii)+cmplx(this%emb_pot(iband,ii),0.0_dp,kind=dp)
+       this%subham_sub(iband,ii) = this%subham_sub(iband,ii)+cmplx(this%emb_pot(iband,ii),zero,kind=dp)
      enddo
    enddo
  endif
@@ -1829,8 +1854,9 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,isppol,ikpt,nband_k,&
  ABI_ALLOCATE(rwork,(3*dim_sub-2))
  lwork = 65*dim_sub ! Value to optimize speed of the diagonalization
  ABI_ALLOCATE(zwork,(lwork))
- call zheev('v','u',dim_sub,this%subham_sub,dim_sub,this%eig_sub,zwork,lwork,rwork,info)
- write(std_out,*) "debug: eig_sub"
+ call zheev('V','L',dim_sub,this%subham_sub,dim_sub,this%eig_sub,zwork,lwork,rwork,info)
+ if(info.ne.0) MSG_ERROR(' Diagonalization failed!')
+ write(std_out,*) " Eigenvalues in subspace dft:"
  do iband=1,dim_sub
    write(std_out,'(f20.15)') this%eig_sub(iband)
  enddo
