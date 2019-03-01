@@ -183,7 +183,7 @@ contains
 subroutine subscf_init(this,dtfil,dtset,psps,results_gs,crystal,nfftf,&
 &                      pawtab,pawrad,pawang,pawfgr,mpi_enreg,&
 &                      ylm,ylmgr,kg,cg,mcg,my_natom,npwarr,ecore,wvl,&
-&                      occ,rhog,rhor,pawrhoij,dens_mat_real,dim_sub,&
+&                      occ,rhog,rhor,pawrhoij,dens_mat_real,dim_sub,dim_all,&
 &                      taug,taur,paw_dmft,dtefield,pwind_alloc,pwind,pwnsfac,electronpositron,& !useless
 &                      emb_pot,ireadwf) !optional
 
@@ -213,10 +213,10 @@ subroutine subscf_init(this,dtfil,dtset,psps,results_gs,crystal,nfftf,&
  integer, intent(in),target :: nfftf,mcg,my_natom
  integer, intent(in),target :: npwarr(dtset%nkpt)
  integer, intent(in),target,optional :: ireadwf
- integer, intent(in) :: dim_sub
+ integer, intent(in) :: dim_sub,dim_all
 
 
- real(dp),intent(in),target :: occ(dim_sub*dtset%nkpt*dtset%nsppol)
+ real(dp),intent(in),target :: occ(dim_all*dtset%nkpt*dtset%nsppol)
  real(dp),intent(in),target :: ylm(dtset%mpw*dtset%mkmem,psps%mpsang*psps%mpsang*psps%useylm)
  real(dp),intent(in),target :: ylmgr(dtset%mpw*dtset%mkmem,3,psps%mpsang*psps%mpsang*psps%useylm)
  real(dp),intent(in),target :: cg(2,mcg),ecore
@@ -381,7 +381,7 @@ end subroutine subscf_destroy
 !! CHILDREN
 !!
 !! SOURCE
-subroutine subscf_run(this,can2sub,dim_can,dim_sub,&
+subroutine subscf_run(this,can2sub,dim_can,dim_sub,dim_all,&
 &                     hdr)
 
 
@@ -396,8 +396,8 @@ subroutine subscf_run(this,can2sub,dim_can,dim_sub,&
  type(subscf_type),intent(inout):: this
  type(hdr_type),intent(inout),optional :: hdr
 
- integer, intent(in) :: dim_can, dim_sub
- complex(dpc), intent(in) :: can2sub(dim_can,dim_sub)
+ integer, intent(in) :: dim_can, dim_sub, dim_all
+ complex(dpc), intent(in) :: can2sub(dim_can,dim_all)
  integer :: initialized
 
 
@@ -407,11 +407,11 @@ subroutine subscf_run(this,can2sub,dim_can,dim_sub,&
  if(present(hdr))then
    call subscf_core(this,this%dtset,this%crystal,this%psps,this%pawtab,this%pawrad,this%pawang,this%pawfgr,&
 &    this%mpi_enreg,initialized,&
-&    this%nfftf,this%ecore,this%rhog,this%rhor,can2sub,dim_can,dim_sub,hdr=hdr)
+&    this%nfftf,this%ecore,this%rhog,this%rhor,can2sub,dim_can,dim_sub,dim_all,hdr=hdr)
  else
    call subscf_core(this,this%dtset,this%crystal,this%psps,this%pawtab,this%pawrad,this%pawang,this%pawfgr,&
 &    this%mpi_enreg,initialized,&
-&    this%nfftf,this%ecore,this%rhog,this%rhor,can2sub,dim_can,dim_sub)
+&    this%nfftf,this%ecore,this%rhog,this%rhor,can2sub,dim_can,dim_sub,dim_all)
  endif
 
 end subroutine subscf_run
@@ -440,7 +440,7 @@ end subroutine subscf_run
 !!
 !! SOURCE
 subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_enreg,initialized,&
-&                      nfftf,ecore,rhog,rhor,can2sub,dim_can,dim_sub,&
+&                      nfftf,ecore,rhog,rhor,can2sub,dim_can,dim_sub,dim_all,&
 &                      hdr)
 
 
@@ -470,8 +470,8 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
  real(dp),intent(inout) :: rhog(2,nfftf)
  real(dp),intent(inout) :: rhor(nfftf,dtset%nspden)
 
- integer, intent(in) :: dim_can,dim_sub
- complex(dpc), intent(in) :: can2sub(dim_can,dim_sub)
+ integer, intent(in) :: dim_can,dim_sub,dim_all
+ complex(dpc), intent(in) :: can2sub(dim_can,dim_all)
 
  real(dp),intent(in) :: ecore
 
@@ -548,8 +548,13 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
  dbl_nnsclo = 0
  deltae=zero ; elast=zero 
 
- ABI_ALLOCATE(this%eig_sub,(dim_sub))
- ABI_ALLOCATE(this%subham_sub,(dim_sub,dim_sub))
+ ABI_ALLOCATE(this%eig_sub,(dim_all))
+ this%eig_sub=zero
+ ABI_ALLOCATE(this%subham_sub,(dim_all,dim_all))
+ this%subham_sub = czero
+ do ii=dim_sub+1,dim_all
+   this%subham_sub(ii,ii) = cone
+ enddo
 
  ipert=0;idir=0;cplex=1
  istep_mix=1
@@ -735,8 +740,10 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
  !end useless
 
  ABI_ALLOCATE(resid,(dtset%mband*dtset%nkpt*dtset%nsppol)) 
- resid(:) = zero
+ resid = zero
+ residm = zero
 
+ prtfor=0;prtxml=0
  call scprqt(choice,dtset%cpus,deltae,diffor,dtset,&
 & this%eig_sub,etotal,favg,fcart,energies%e_fermie,this%dtfil%fnameabo_app_eig,&
 & this%dtfil%filnam_ds(1),initialized0,dtset%iscf,istep,dtset%kptns,&
@@ -1106,7 +1113,7 @@ endif
    call subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,this%dtfil,istep,compch_fft,&
 &    pawtab,pawfgr,pawfgrtab,pawang,paw_ij,this%pawrhoij,rhog,rhor,nhat,nvresid,optres,res2,tauresid,&
 &    this%kg,this%ylm,this%ylmgr,vtrial,energies,ph1d,fock,my_natom,dtset%natom,psps%ntypat,0,nfftf,&
-&    gmet,gprimd,indsym,symrec,irrzon,phnons,rmet,ucvol,this%paw_dmft,this%wvl,can2sub,dim_can,dim_sub)
+&    gmet,gprimd,indsym,symrec,irrzon,phnons,rmet,ucvol,this%paw_dmft,this%wvl,can2sub,dim_can,dim_sub,dim_all)
 
 
    if (dtset%iscf>=10) then
@@ -1131,6 +1138,7 @@ endif
      end if
 !    If the density mixing is required, compute the total energy here
 ! TODO: add taur taug tauresid if needed
+     optene = 0
      call etotfor(crystal%atindx1,deltae,diffor,dtefield,dtset,&
 &     elast,this%electronpositron,energies,&
 &     etotal,favg,fcart,fock,forold,fred,gmet,grchempottn,gresid,grewtn,grhf,grnl,grvdw,&
@@ -1311,7 +1319,7 @@ end subroutine cleanup
 subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_fft,&
 & pawtab,pawfgr,pawfgrtab,pawang,paw_ij,pawrhoij,rhog,rhor,nhat,nvresid,optres,nres2,tauresid,&
 & kg,ylm,ylmgr,vtrial,energies,ph1d,fock,my_natom,natom,ntypat,optforces,nfftf,&
-& gmet,gprimd,indsym,symrec,irrzon,phnons,rmet,ucvol,paw_dmft,wvl,can2sub,dim_can,dim_sub)
+& gmet,gprimd,indsym,symrec,irrzon,phnons,rmet,ucvol,paw_dmft,wvl,can2sub,dim_can,dim_sub,dim_all)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -1350,15 +1358,16 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  type(paw_ij_type),intent(inout) :: paw_ij(my_natom*psps%usepaw)
  type(pawrhoij_type),target,intent(inout) :: pawrhoij(my_natom*psps%usepaw)
 
- integer, intent(in) :: dim_can,dim_sub
+ integer, intent(in) :: dim_can,dim_sub,dim_all
  integer, intent(in) :: irrzon(dtset%nfft**(1-1/dtset%nsym),2,(dtset%nspden/dtset%nsppol)-3*(dtset%nspden/4))
  integer, intent(in) :: indsym(4,dtset%nsym,natom)
  real(dp), intent(in) :: ucvol
  real(dp), intent(in) :: phnons(2,dtset%nfft**(1-1/dtset%nsym),(dtset%nspden/dtset%nsppol)-3*(dtset%nspden/4))
- complex(dpc), intent(in) :: can2sub(dim_can,dim_sub)
+ complex(dpc), intent(in) :: can2sub(dim_can,dim_all)
  type(paw_dmft_type),intent(inout) :: paw_dmft
  type(wvl_data), intent(inout) :: wvl
 
+ integer :: mcg_new
  integer :: usecprj_local,istwf_k,cplex,ipert
  integer :: isppol,ikg,ilm,nkpg,dimffnl,ider,idir
  integer :: ikpt_loc,ikpt,nkpt1,nband_k,my_ikpt
@@ -1367,18 +1376,18 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  integer :: mband_cprj,mcprj_tmp,my_nspinor
  integer,parameter :: tim_mkrho=2
  real(dp) :: ar
-
+ real(dp) :: nelect_frozen
 
  !arrays
+ integer :: nband_sub(1)
  integer,allocatable :: kg_k(:,:)
- integer :: nband_sub(dtset%nkpt*dtset%nsppol)
  real(dp) :: rhodum(1),kpoint(3),ylmgr_dum(0,0,0),qpt(3)
  real(dp), allocatable :: ylm_k(:,:),kinpw(:),kpg_k(:,:),subham(:)
  type(gs_hamiltonian_type) :: gs_hamk
  real(dp),allocatable :: cgrvtrial(:,:),vlocal(:,:,:,:),ffnl(:,:,:,:),ph3d(:,:,:),zshift(:)
  real(dp),allocatable :: cg_new(:,:), tmp_real(:,:),tmp_img(:,:)
  real(dp),allocatable :: rhowfg(:,:),rhowfr(:,:)
- complex(dpc),allocatable :: dens_mat(:,:),tmp(:,:)
+ complex(dpc),allocatable :: dens_mat(:,:),tmp(:,:),dens_mat_can(:,:)
 
  type(pawcprj_type),allocatable :: cprj_tmp(:,:)
  type(pawrhoij_type),pointer :: pawrhoij_unsym(:) 
@@ -1546,7 +1555,7 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
      ABI_ALLOCATE(pwnsfacq,(2,mkgq))
 
      call subscf_mkham(this,dtset,mpi_enreg,gs_hamk,isppol,ikpt,nband_k,&
-&      cgq,pwnsfacq,mcgq,mkgq,zshift,can2sub,dim_can,dim_sub)
+&      cgq,pwnsfacq,mcgq,mkgq,zshift,can2sub,dim_can,dim_sub,dim_all)
 
 
 
@@ -1564,18 +1573,25 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
 
  ABI_DEALLOCATE(vlocal)
 
- ABI_ALLOCATE(doccde,(dim_sub*dtset%nkpt*dtset%nsppol))
- nband_sub(:) = dim_sub
+ ABI_ALLOCATE(doccde,(dtset%mband*dtset%nkpt*dtset%nsppol))
  doccde(:)=zero
 
 ! call newocc(doccde,this%eig_sub,energies%entropy,energies%e_fermie,dtset%spinmagntarget,&
 !& dtset%mband,dtset%nband,dtset%nelect,dtset%nkpt,dtset%nspinor,&
 !& dtset%nsppol,this%occ,dtset%occopt,dtset%prtvol,dtset%stmbias,dtset%tphysel,dtset%tsmear,dtset%wtk)
 
- call newocc(doccde,this%eig_sub,energies%entropy,energies%e_fermie,dtset%spinmagntarget,&
-& dim_sub,nband_sub,dtset%nelect,dtset%nkpt,dtset%nspinor,&
-& dtset%nsppol,this%occ,dtset%occopt,dtset%prtvol,dtset%stmbias,dtset%tphysel,dtset%tsmear,dtset%wtk)
+ nband_sub = dim_sub
 
+ nelect_frozen = zero
+ do ii=dim_sub+1,dim_all
+   nelect_frozen = nelect_frozen + this%occ(ii)
+ enddo
+
+ if(dtset%occopt>=3.and.dtset%occopt<=8)then
+ call newocc(doccde,this%eig_sub(1:dim_sub),energies%entropy,energies%e_fermie,dtset%spinmagntarget,&
+& dim_sub,nband_sub,dtset%nelect-nelect_frozen,dtset%nkpt,dtset%nspinor,&
+& dtset%nsppol,this%occ(1:dim_sub),dtset%occopt,dtset%prtvol,dtset%stmbias,dtset%tphysel,dtset%tsmear,dtset%wtk)
+ endif
 
  ABI_DEALLOCATE(doccde)
 
@@ -1583,22 +1599,27 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  ABI_ALLOCATE(dens_mat,(dim_sub,dim_sub))
  dens_mat = czero
  do ii=1,dim_sub
-   dens_mat(ii,ii) = cmplx(this%occ(ii),0.0,kind=dp)
+   dens_mat(ii,ii) = cmplx(this%occ(ii),zero,kind=dp)
  enddo
 
  ABI_ALLOCATE(tmp,(dim_sub,dim_sub))
- tmp = czero
- call zgemm('N','C',dim_sub,dim_sub,dim_sub,cone,dens_mat,dim_sub,this%subham_sub,dim_sub,czero,tmp,dim_sub)
- dens_mat = czero
- call zgemm('N','N',dim_sub,dim_sub,dim_sub,cone,this%subham_sub,dim_sub,tmp,dim_sub,czero,dens_mat,dim_sub)
+ call zgemm('N','C',dim_sub,dim_sub,dim_sub,cone,dens_mat,dim_sub,this%subham_sub(1:dim_sub,1:dim_sub),dim_sub,czero,tmp,dim_sub)
+ call zgemm('N','N',dim_sub,dim_sub,dim_sub,cone,this%subham_sub(1:dim_sub,1:dim_sub),dim_sub,tmp,dim_sub,czero,dens_mat,dim_sub)
+
+! ABI_ALLOCATE(dens_mat_can,(dim_can,dim_can))
+! call zgemm('N','C',dim_sub,dim_can,dim_sub,cone,dens_mat,dim_sub,can2sub,dim_sub,czero,tmp,dim_sub)
+! call zgemm('N','N',dim_can,dim_can,dim_sub,cone,can2sub,dim_can,tmp,dim_sub,czero,dens_mat_can,dim_can)
 
  ABI_DEALLOCATE(tmp)
 
+! write(std_out,*) "dens_mat_can max abs imag:", maxval(abs(aimag(dens_mat_can)))
+! ABI_DEALLOCATE(dens_mat_can)
+
  ABI_ALLOCATE(tmp_img,(dim_sub,dim_sub))
  tmp_img = aimag(dens_mat)
- if(maxval(abs(tmp_img)).gt.tol8) then
-   MSG_WARNING(' Density matrix is not real!') 
-   write(std_out,*) " max abs imaginary element:", maxval(abs(tmp_img))
+ if(maxval(abs(tmp_img))>tol8) then
+   MSG_WARNING('Density matrix is not real!') 
+   write(std_out,*) "max abs imaginary element:", maxval(abs(tmp_img))
 !   do ii=1,dim_sub
 !     write(std_out,'(*(F9.6))') tmp_img(ii,:)
 !   enddo
@@ -1611,12 +1632,12 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
 ! enddo
  ABI_DEALLOCATE(dens_mat)
 
- ABI_ALLOCATE(tmp,(dim_can,dim_sub))
- ABI_ALLOCATE(cg_new,(2,this%mcg))
- tmp = czero
- call zgemm('N','N',dim_can,dim_sub,dim_sub,cone,can2sub,dim_can,this%subham_sub,dim_sub,czero,tmp,dim_can)
- ABI_ALLOCATE(tmp_real,(dim_can,dim_sub))
- ABI_ALLOCATE(tmp_img,(dim_can,dim_sub))
+ ABI_ALLOCATE(tmp,(dim_can,dim_all))
+ mcg_new = dtset%mpw*dim_all
+ ABI_ALLOCATE(cg_new,(2,mcg_new))
+ call zgemm('N','N',dim_can,dim_all,dim_all,cone,can2sub,dim_can,this%subham_sub,dim_all,czero,tmp,dim_can)
+ ABI_ALLOCATE(tmp_real,(dim_can,dim_all))
+ ABI_ALLOCATE(tmp_img,(dim_can,dim_all))
  tmp_real = real(tmp,kind=dp)
  tmp_img = aimag(tmp)
 
@@ -1626,10 +1647,10 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
 ! enddo
  ABI_DEALLOCATE(tmp)
  
- call dgemm('N','N',dtset%mpw,dim_sub,dim_can,one,this%cg(1,:),dtset%mpw,tmp_real,dim_can,zero,cg_new(1,:),dtset%mpw)
- call dgemm('N','N',dtset%mpw,dim_sub,dim_can,-one,this%cg(2,:),dtset%mpw,tmp_img,dim_can,one,cg_new(1,:),dtset%mpw)
- call dgemm('N','N',dtset%mpw,dim_sub,dim_can,one,this%cg(1,:),dtset%mpw,tmp_img,dim_can,zero,cg_new(2,:),dtset%mpw)
- call dgemm('N','N',dtset%mpw,dim_sub,dim_can,one,this%cg(2,:),dtset%mpw,tmp_real,dim_can,one,cg_new(2,:),dtset%mpw)
+ call dgemm('N','N',dtset%mpw,dim_all,dim_can,one,this%cg(1,:),dtset%mpw,tmp_real,dim_can,zero,cg_new(1,:),dtset%mpw)
+ call dgemm('N','N',dtset%mpw,dim_all,dim_can,-one,this%cg(2,:),dtset%mpw,tmp_img,dim_can,one,cg_new(1,:),dtset%mpw)
+ call dgemm('N','N',dtset%mpw,dim_all,dim_can,one,this%cg(1,:),dtset%mpw,tmp_img,dim_can,zero,cg_new(2,:),dtset%mpw)
+ call dgemm('N','N',dtset%mpw,dim_all,dim_can,one,this%cg(2,:),dtset%mpw,tmp_real,dim_can,one,cg_new(2,:),dtset%mpw)
 
  ABI_DEALLOCATE(tmp_real)
  ABI_DEALLOCATE(tmp_img)
@@ -1637,7 +1658,7 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  !FIXME
  !compute kinetic energy
  if(iscf>0 .or. iscf==-3)then
-   do iband=1,dim_sub
+   do iband=1,dim_all
      if(abs(this%occ(iband))>tol8) then
        call meanvalue_g(ar,kinpw,0,istwf_k,mpi_enreg,npw_k,my_nspinor,&
 &       cg_new(:,1+(iband-1)*npw_k*my_nspinor:iband*npw_k*my_nspinor),&
@@ -1650,7 +1671,7 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  endif
 
 
- call mkrho(cg_new,dtset,gprimd,irrzon,kg,this%mcg,mpi_enreg,this%npwarr,this%occ,paw_dmft,phnons,&
+ call mkrho(cg_new,dtset,gprimd,irrzon,kg,mcg_new,mpi_enreg,this%npwarr,this%occ,paw_dmft,phnons,&
 & rhowfg,rhowfr,crystal%rprimd,tim_mkrho,ucvol,wvl%den,wvl%wfs)
 
  if (iscf>0.or.iscf==-3) then
@@ -1676,7 +1697,7 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
        ABI_DATATYPE_ALLOCATE(cprj_tmp,(natom,mcprj_tmp))
        call pawcprj_alloc(cprj_tmp,0,gs_hamk%dimcprj)
        call ctocprj(crystal%atindx,cg_new,1,cprj_tmp,gmet,gprimd,0,0,0,dtset%istwfk,kg,dtset%kptns,&
-&       this%mcg,mcprj_tmp,dtset%mgfft,dtset%mkmem,mpi_enreg,psps%mpsang,dtset%mpw,&
+&       mcg_new,mcprj_tmp,dtset%mgfft,dtset%mkmem,mpi_enreg,psps%mpsang,dtset%mpw,&
 &       dtset%natom,crystal%nattyp,dtset%nband,dtset%natom,dtset%ngfft,dtset%nkpt,dtset%nloalg,&
 &       this%npwarr,dtset%nspinor,dtset%nsppol,ntypat,dtset%paral_kgb,ph1d,psps,rmet,dtset%typat,&
 &       ucvol,dtfil%unpaw,crystal%xred,ylm,ylmgr_dum)
@@ -1750,7 +1771,7 @@ end subroutine subscf_vtorho
 !!
 !! SOURCE
 subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,isppol,ikpt,nband_k,&
-&                       cgq,pwnsfacq,mcgq,mkgq,zshift,can2sub,dim_can,dim_sub)
+&                       cgq,pwnsfacq,mcgq,mkgq,zshift,can2sub,dim_can,dim_sub,dim_all)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -1769,8 +1790,8 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,isppol,ikpt,nband_k,&
  type(dataset_type),intent(in) :: dtset
  type(MPI_type),intent(in) :: mpi_enreg
 
- integer, intent(in) :: dim_can,dim_sub
- complex(dpc), intent(in) :: can2sub(dim_can,dim_sub)
+ integer, intent(in) :: dim_can,dim_sub,dim_all
+ complex(dpc), intent(in) :: can2sub(dim_can,dim_all)
 
  integer :: npw_k,mgsc
 
@@ -1788,7 +1809,6 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,isppol,ikpt,nband_k,&
  real(dp), allocatable :: rwork(:)
  complex(dpc), allocatable :: zwork(:)
  integer :: lwork,info
-
 
  !useless stuffs
  integer, intent(in) :: mcgq,mkgq
@@ -1836,7 +1856,7 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,isppol,ikpt,nband_k,&
 
  write(std_out,*)" max abs imaginary subham_can element:",maxval(abs(aimag(subham_full)))
 
- call compute_oper_ks2sub(subham_full,this%subham_sub,can2sub,nband_k,dim_sub)
+ call compute_oper_ks2sub(subham_full,this%subham_sub(1:dim_sub,1:dim_sub),can2sub,nband_k,dim_sub)
 
  write(std_out,*)" max abs imaginary subham_sub element:",maxval(abs(aimag(this%subham_sub)))
 ! do ii=1,dim_sub
@@ -1854,13 +1874,12 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,isppol,ikpt,nband_k,&
  ABI_ALLOCATE(rwork,(3*dim_sub-2))
  lwork = 65*dim_sub ! Value to optimize speed of the diagonalization
  ABI_ALLOCATE(zwork,(lwork))
- call zheev('V','L',dim_sub,this%subham_sub,dim_sub,this%eig_sub,zwork,lwork,rwork,info)
+ call zheev('v','u',dim_sub,this%subham_sub(1:dim_sub,1:dim_sub),dim_sub,this%eig_sub(1:dim_sub),zwork,lwork,rwork,info)
  if(info.ne.0) MSG_ERROR(' Diagonalization failed!')
  write(std_out,*) " Eigenvalues in subspace dft:"
  do iband=1,dim_sub
    write(std_out,'(f20.15)') this%eig_sub(iband)
  enddo
-
 
  ABI_DEALLOCATE(subham)
  ABI_DEALLOCATE(subham_full) 

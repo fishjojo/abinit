@@ -123,18 +123,18 @@ subroutine oep_run(this,wtol,max_cycle)
 
  integer*8 opt  !pointer to the opt object
  integer algorithm, n, ires
- integer i,j,k,dimP
+ integer i,j,k,dim_sub
 
  real(dp) :: minf, tol
  real(dp),allocatable :: x(:)
 
  opt = 0
  algorithm = NLOPT_LD_LBFGS !temporarily hard coded
- dimP = this%scf_inp%dim_sub
- n = dimP*(dimP+1)/2
+ dim_sub = this%scf_inp%dim_sub
+ n = dim_sub*(dim_sub+1)/2
 
  ABI_ALLOCATE(x,(n))
- call mat2vec(x,this%V_emb,dimP)
+ call mat2vec(x,this%V_emb,dim_sub)
 
  call nlo_create(opt, algorithm, n)
 
@@ -243,7 +243,7 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
  implicit none
      
  integer n,need_gradient
- integer i, dim_can, dimP
+ integer i, dim_can, dim_sub, dim_all, dim_all_loc
  real(dp) :: f, x(n), grad(n), e_imp, e_bath
  real(dp),allocatable :: diffP(:,:), e_sub(:)
  type(oep_type) :: this
@@ -251,11 +251,12 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
  type(results_gs_type),allocatable :: results(:)
 
  dim_can = this%scf_inp%dim_can
- dimP = this%scf_inp%dim_sub
- call vec2mat(x,this%V_emb,dimP)
+ dim_sub = this%scf_inp%dim_sub
+ dim_all = this%scf_inp%dim_all
+ call vec2mat(x,this%V_emb,dim_sub)
 
 ! write(std_out,*) "Vemb:"
-! do i=1,dimP
+! do i=1,dim_sub
 !   write(std_out,*) this%V_emb(i,:)
 ! enddo
 
@@ -266,10 +267,15 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
 
  do i=1,this%nsubsys
    call init_results_gs(this%sub_dtsets(i)%natom,this%sub_dtsets(i)%nsppol,results(i))
+   if(i==1)then
+     dim_all_loc = dim_sub
+   else
+     dim_all_loc = dim_all
+   endif
    call gstate_sub(this%scf_inp%acell,this%sub_dtsets(i),this%scf_inp%psps,this%scf_inp%rprim,&
 &   results(i),this%scf_inp%mpi_enreg,this%scf_inp%dtfil,this%scf_inp%wvl,&
 &   this%scf_inp%cg,this%scf_inp%pawtab,this%scf_inp%pawrad,this%scf_inp%pawang,this%scf_inp%xred,&
-&   this%P_sub(i)%value,this%scf_inp%can2sub,dim_can,dimP,&
+&   this%P_sub(i)%value,this%scf_inp%can2sub,dim_can,dim_sub,dim_all_loc,this%scf_inp%sub_occ,&
 &   emb_pot=this%V_emb)
 
    e_sub(i) = results(i)%etotal
@@ -282,7 +288,7 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
  do i=1,this%nsubsys
    f = f + e_sub(i)
  enddo 
- f = f - trace_dot(this%P_ref,this%V_emb,dimP)
+ f = f - trace_dot(this%P_ref,this%V_emb,dim_sub)
 
  write(std_out,*) "objective function value:", f
 
@@ -293,13 +299,13 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
  !gradient
  if (need_gradient.ne.0) then
    !compute gradient
-   ABI_ALLOCATE(diffP,(dimP,dimP))
+   ABI_ALLOCATE(diffP,(dim_sub,dim_sub))
    diffP = zero
    do i=1,this%nsubsys
      diffP = diffP + this%P_sub(i)%value
    enddo
    diffP = diffP - this%P_ref
-   call mat2vec(grad,diffP,dimP)
+   call mat2vec(grad,diffP,dim_sub)
    grad = -1.0_dp*grad
    write(std_out,*) "max component of gradient:", maxval(abs(grad))
    ABI_DEALLOCATE(diffP)

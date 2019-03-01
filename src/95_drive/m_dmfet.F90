@@ -577,12 +577,18 @@ subroutine dmfet_core(this,rprim,codvsn)
 !arrays
  real(dp),allocatable :: dens_tot(:,:),emb_pot(:,:)
 
+ dim_sub = this%dim_sub !use all of sub orbitals for now
+ !modify dtset
+! this%dtset%mband = dim_sub
+! this%dtset%nband = dim_sub 
+ !end modify dtset
+
+
  bstruct = ebands_from_dtset(this%dtset, this%npwarr)
  call hdr_init(bstruct,codvsn,this%dtset,hdr,this%pawtab,0,this%psps,this%wvl%descr,&
 & comm_atom=this%mpi_enreg%comm_atom,mpi_atmtab=this%mpi_enreg%my_atmtab)
  call ebands_free(bstruct)
 
- dim_sub = this%dim_all !use all of sub orbitals for now
  ABI_ALLOCATE(dens_tot,(dim_sub,dim_sub))
 
 !test can2sub as unit matrix
@@ -595,7 +601,8 @@ subroutine dmfet_core(this,rprim,codvsn)
  call init_results_gs(this%dtset%natom,this%dtset%nsppol,res_tot)
  call gstate_sub(this%acell,this%dtset,this%psps,rprim,res_tot,this%mpi_enreg,this%dtfil,this%wvl,&
 & this%cg,this%pawtab,this%pawrad,this%pawang,this%crystal%xred,&
-& dens_tot,this%can2sub,this%n_canonical,dim_sub,hdr=hdr) 
+& dens_tot,this%can2sub,this%n_canonical,dim_sub,this%dim_all,this%sub_occ(1:this%dim_all),&
+& hdr=hdr) 
 
 
  nsubsys = this%dtset%nsubsys
@@ -611,7 +618,7 @@ subroutine dmfet_core(this,rprim,codvsn)
  enddo
 
  call gstate_sub_input_var_init(scf_inp,this%acell,rprim,this%crystal%xred,this%dtset%natom,this%mcg,this%psps,this%mpi_enreg,&
-& this%dtfil,this%wvl,this%cg,this%pawtab,this%pawrad,this%pawang,this%can2sub,this%n_canonical,dim_sub)
+& this%dtfil,this%wvl,this%cg,this%pawtab,this%pawrad,this%pawang,this%can2sub,this%n_canonical,dim_sub,this%dim_all,this%sub_occ(1:this%dim_all))
 
  call oep_init(oep_args,scf_inp,dens_tot,dens_sub,emb_pot,opt_algorithm,sub_dtsets,nsubsys)
  call oep_run(oep_args,this%dtset%vemb_opt_w_tol,this%dtset%vemb_opt_cycle)

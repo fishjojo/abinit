@@ -85,10 +85,12 @@ module m_gstate_sub
 
    integer, pointer :: dim_can=>null()  !length of subspace basis orbitals
    integer, pointer :: dim_sub=>null() !dimension of subspace
+   integer, pointer :: dim_all=>null()
    real(dp), pointer :: acell(:)=>null()
    real(dp), pointer :: rprim(:,:)=>null()
    real(dp), pointer :: xred(:,:)=>null()
    real(dp), pointer :: cg(:,:)=>null()
+   real(dp), pointer :: sub_occ(:)=>null()
    complex(dpc), pointer :: can2sub(:,:)=>null()
 
  end type gstate_sub_input_var
@@ -96,7 +98,7 @@ module m_gstate_sub
 contains
 
 subroutine gstate_sub_input_var_init(this,acell,rprim,xred,natom,mcg,psps,mpi_enreg,dtfil,wvl,&
-& cg,pawtab,pawrad,pawang,can2sub,dim_can,dim_sub)
+& cg,pawtab,pawrad,pawang,can2sub,dim_can,dim_sub,dim_all,sub_occ)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -117,12 +119,13 @@ subroutine gstate_sub_input_var_init(this,acell,rprim,xred,natom,mcg,psps,mpi_en
  type(pawrad_type),intent(in),target :: pawrad(psps%ntypat*psps%usepaw)
  type(pawang_type),intent(in),target :: pawang
 
- integer, intent(in),target :: natom,mcg,dim_can,dim_sub
+ integer, intent(in),target :: natom,mcg,dim_can,dim_sub,dim_all
  real(dp),intent(in),target :: acell(3)
  real(dp),intent(in),target :: rprim(3,3)
  real(dp),intent(in),target :: xred(3,natom)
  real(dp),intent(in),target :: cg(2,mcg)
- complex(dpc),intent(in),target :: can2sub(dim_can,dim_sub)
+ real(dp),intent(in),target :: sub_occ(dim_all)
+ complex(dpc),intent(in),target :: can2sub(dim_can,dim_all)
 
  this%psps=>psps
  this%mpi_enreg=>mpi_enreg
@@ -133,6 +136,8 @@ subroutine gstate_sub_input_var_init(this,acell,rprim,xred,natom,mcg,psps,mpi_en
  this%pawang=>pawang
  this%dim_can=>dim_can
  this%dim_sub=>dim_sub
+ this%dim_all=>dim_all
+ this%sub_occ=>sub_occ
  this%acell=>acell
  this%rprim=>rprim
  this%xred=>xred
@@ -145,7 +150,7 @@ end subroutine gstate_sub_input_var_init
 
 subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 & cg,pawtab,pawrad,pawang,xred,&
-& dens,can2sub,dim_can,dim_sub,&
+& dens,can2sub,dim_can,dim_sub,dim_all,sub_occ,&
 & emb_pot,hdr) !optional
 
 
@@ -172,7 +177,8 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  type(pawfgr_type) :: pawfgr
 
 
- integer, intent(in) :: dim_can, dim_sub
+ integer, intent(in) :: dim_can, dim_sub, dim_all
+ real(dp),intent(in) :: sub_occ(dim_all)
 
  real(dp),intent(inout) :: acell(3)
  real(dp),intent(inout) :: xred(3,dtset%natom)
@@ -180,7 +186,7 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 
  real(dp), intent(inout) :: dens(dim_sub,dim_sub),rprim(3,3)
  real(dp), intent(in), optional :: emb_pot(dim_sub,dim_sub)
- complex(dpc), intent(in) :: can2sub(dim_can,dim_sub)
+ complex(dpc), intent(in) :: can2sub(dim_can,dim_all)
 
  type(subscf_type) :: subscf_args
  type(crystal_t) :: crystal
@@ -347,11 +353,14 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 
 
  !simply use default occ FIXME
- ABI_ALLOCATE(occ,(dim_sub*dtset%nkpt*dtset%nsppol))
+ ABI_ALLOCATE(occ,(dim_all*dtset%nkpt*dtset%nsppol))
  occ =zero
 ! occ(:) = dtset%occ_orig(:,1)
  do iband=1,int(dtset%nelect)/2
    occ(iband) = 2.0_dp
+ enddo
+ do iband=dim_sub+1,dim_all
+   occ(iband) = sub_occ(iband)
  enddo
 
  if(present(hdr))then
@@ -596,21 +605,21 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
   call subscf_init(subscf_args,dtfil,dtset,psps,results_gs,crystal,nfftf,&
 &  pawtab,pawrad,pawang,pawfgr,mpi_enreg,&
 &  ylm,ylmgr,kg,cg,mcg,my_natom,npwarr,ecore,wvl,&
-&  occ,rhog,rhor,pawrhoij,dens,dim_sub,&
+&  occ,rhog,rhor,pawrhoij,dens,dim_sub,dim_all,&
 &  taug,taur,paw_dmft,dtefield,pwind_alloc,pwind,pwnsfac,electronpositron,&
 &  emb_pot)
  else
   call subscf_init(subscf_args,dtfil,dtset,psps,results_gs,crystal,nfftf,&
 &  pawtab,pawrad,pawang,pawfgr,mpi_enreg,&
 &  ylm,ylmgr,kg,cg,mcg,my_natom,npwarr,ecore,wvl,&
-&  occ,rhog,rhor,pawrhoij,dens,dim_sub,&
+&  occ,rhog,rhor,pawrhoij,dens,dim_sub,dim_all,&
 &  taug,taur,paw_dmft,dtefield,pwind_alloc,pwind,pwnsfac,electronpositron)
  endif
 
  if(present(hdr))then
-   call subscf_run(subscf_args,can2sub,dim_can,dim_sub,hdr=hdr)
+   call subscf_run(subscf_args,can2sub,dim_can,dim_sub,dim_all,hdr=hdr)
  else
-   call subscf_run(subscf_args,can2sub,dim_can,dim_sub)
+   call subscf_run(subscf_args,can2sub,dim_can,dim_sub,dim_all)
  endif
 
  call subscf_destroy(subscf_args)

@@ -1623,6 +1623,7 @@ subroutine scfcv_core(atindx,atindx1,cg,cprj,cpus,dmatpawu,dtefield,dtfil,dtorbm
      end if
 !    If the density mixing is required, compute the total energy here
 ! TODO: add taur taug tauresid if needed
+     optene = 0 !Xing test
      call etotfor(atindx1,deltae,diffor,dtefield,dtset,&
 &     elast,electronpositron,energies,&
 &     etotal,favg,fcart,fock,forold,fred,gmet,grchempottn,gresid,grewtn,grhf,grnl,grvdw,&
@@ -2580,6 +2581,17 @@ subroutine etotfor(atindx1,deltae,diffor,dtefield,dtset,&
 !  emag = dot_product(mag_cart,dtset%bfield)
 !  energies%e_magfield = emag
 !  end if
+
+   write(std_out,*) 'debug'
+   write(std_out,*) 'e_kinetic=',energies%e_kinetic
+   write(std_out,*) 'e_hartree=',energies%e_hartree
+   write(std_out,*) 'e_xc=',energies%e_xc
+   write(std_out,*) 'e_localpsp=',energies%e_localpsp
+   write(std_out,*) 'e_corepsp=',energies%e_corepsp
+   write(std_out,*) 'e_fock=',energies%e_fock
+   write(std_out,*) 'e_entropy=',energies%e_entropy
+   write(std_out,*) 'e_ewald=',energies%e_ewald
+   write(std_out,*) 'e_paw=',energies%e_paw
 
 !  Compute total (free)- energy by direct scheme
    if (optene==0) then
