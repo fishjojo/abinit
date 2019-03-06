@@ -268,10 +268,13 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
  do i=1,this%nsubsys
    call init_results_gs(this%sub_dtsets(i)%natom,this%sub_dtsets(i)%nsppol,results(i))
    if(i==1)then
+     !embedded region should not have frozen orbitals
      dim_all_loc = dim_sub
    else
      dim_all_loc = dim_all
    endif
+   this%sub_dtsets(i)%mband = dim_all_loc
+   this%sub_dtsets(i)%nband = dim_all_loc
    call gstate_sub(this%scf_inp%acell,this%sub_dtsets(i),this%scf_inp%psps,this%scf_inp%rprim,&
 &   results(i),this%scf_inp%mpi_enreg,this%scf_inp%dtfil,this%scf_inp%wvl,&
 &   this%scf_inp%cg,this%scf_inp%pawtab,this%scf_inp%pawrad,this%scf_inp%pawang,this%scf_inp%xred,&

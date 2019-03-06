@@ -1623,7 +1623,6 @@ subroutine scfcv_core(atindx,atindx1,cg,cprj,cpus,dmatpawu,dtefield,dtfil,dtorbm
      end if
 !    If the density mixing is required, compute the total energy here
 ! TODO: add taur taug tauresid if needed
-     optene = 0 !Xing test
      call etotfor(atindx1,deltae,diffor,dtefield,dtset,&
 &     elast,electronpositron,energies,&
 &     etotal,favg,fcart,fock,forold,fred,gmet,grchempottn,gresid,grewtn,grhf,grnl,grvdw,&

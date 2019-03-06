@@ -228,13 +228,20 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 
  type(pawrhoij_type),pointer :: pawrhoij(:)
 
-!debug
- integer,save :: icalled = 0 
-! type(crystal_t),intent(in) ::crystal_tot
 
  DBG_ENTER("COLL")
 
+!debug
+ integer,save :: icalled = 0
+! type(crystal_t),intent(in) ::crystal_tot
  icalled = icalled + 1
+
+!check compatability
+ if(dtset%nkpt.ne.1) MSG_ERROR('Only support nkpt==1 for now!') 
+ if(any(abs(dtset%nucdipmom)>0.0)) MSG_ERROR('Non-zero nucdipmom is not supported yet!')
+ if(dtset%usefock==1) MSG_ERROR('Only support usefock==0 for now!')
+ if(dtset%nsppol.ne.1) MSG_ERROR('Only support nsppol==1 for now!')
+ if(dtset%nspinor.ne.1) MSG_ERROR('Only support nspinor==1 for now!')
 
 !###########################################################
 !### 01. Initializations XML, MPI, WVL, etc

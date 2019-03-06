@@ -53,6 +53,7 @@ module m_dmfet
  use m_dtset,            only : dtset_copy,dtset_chkneu
  use m_results_gs,       only : results_gs_type,init_results_gs
  use m_ioarr,            only : fftdatar_write
+ use m_iowf,             only : outwf
 
  use m_dmfet_oep
  use m_gstate_sub
@@ -169,6 +170,8 @@ subroutine dmfet_init(this,acell,crystal,dtfil,dtset,psps,mpi_enreg,&
  logical :: DEBUG=.FALSE.
 
  DBG_ENTER("COLL")
+
+ if(dtset%nsubsys.ne.2) MSG_ERROR('Only support nsubsys==2 for now!')
 
  this%dtfil=>dtfil
  this%dtset=>dtset
@@ -578,10 +581,11 @@ subroutine dmfet_core(this,rprim,codvsn)
  real(dp),allocatable :: dens_tot(:,:),emb_pot(:,:)
 
  dim_sub = this%dim_sub !use all of sub orbitals for now
- !modify dtset
-! this%dtset%mband = dim_sub
-! this%dtset%nband = dim_sub 
- !end modify dtset
+
+!modify dtset for subspace scf calculation
+ this%dtset%mband = this%dim_all
+ this%dtset%nband(:) = this%dim_all 
+!end modify dtset
 
 
  bstruct = ebands_from_dtset(this%dtset, this%npwarr)
@@ -596,6 +600,9 @@ subroutine dmfet_core(this,rprim,codvsn)
 ! do i=1,this%dim_all
 !   this%can2sub(i,i) = cmplx(one,zero,kind=dp)
 ! enddo
+
+! call print_can2sub(this,this%dtset,this%dtfil,hdr,this%mpi_enreg)
+! stop
 
  !total scf calc in subspace
  call init_results_gs(this%dtset%natom,this%dtset%nsppol,res_tot)
@@ -1067,6 +1074,59 @@ subroutine print_vemb(this,dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg
  ABI_DEALLOCATE(vemb_can_img)
 
 end subroutine print_vemb
+
+
+subroutine print_can2sub(this,dtset,dtfil,hdr,mpi_enreg)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'print_can2sub'
+!End of the abilint section
+
+ implicit none
+
+ type(dmfet_type), intent(inout) :: this
+ type(dataset_type),intent(in) :: dtset
+ type(hdr_type),intent(inout) :: hdr
+ type(datafiles_type),intent(in) :: dtfil
+ type(MPI_type),intent(in) :: mpi_enreg
+
+ integer :: dim_can,dim_all,mcg
+ integer :: nband_sub(1)
+
+ real(dp),allocatable::cg_new(:,:)
+ real(dp),allocatable::tmp_real(:,:),tmp_img(:,:)
+ real(dp),allocatable::resid(:),eigen(:)
+
+ dim_can = this%n_canonical
+ dim_all =this%dim_all
+
+ ABI_ALLOCATE(tmp_real,(dim_can,dim_all))
+ ABI_ALLOCATE(tmp_img,(dim_can,dim_all))
+ tmp_real=real(this%can2sub)
+ tmp_img=aimag(this%can2sub)
+
+ mcg = dtset%mpw*dim_all
+ ABI_ALLOCATE(cg_new,(2,mcg))
+ call dgemm('N','N',dtset%mpw,dim_all,dim_can,one,this%cg(1,:),dtset%mpw,tmp_real,dim_can,zero,cg_new(1,:),dtset%mpw)
+ call dgemm('N','N',dtset%mpw,dim_all,dim_can,-one,this%cg(2,:),dtset%mpw,tmp_img,dim_can,one,cg_new(1,:),dtset%mpw)
+ call dgemm('N','N',dtset%mpw,dim_all,dim_can,one,this%cg(1,:),dtset%mpw,tmp_img,dim_can,zero,cg_new(2,:),dtset%mpw)
+ call dgemm('N','N',dtset%mpw,dim_all,dim_can,one,this%cg(2,:),dtset%mpw,tmp_real,dim_can,one,cg_new(2,:),dtset%mpw)
+
+ nband_sub = dim_all
+ hdr%nband = nband_sub
+ hdr%mband = dim_all
+ ABI_ALLOCATE(resid,(dim_all*dtset%nkpt*dtset%nsppol))
+ ABI_ALLOCATE(eigen,(dim_all*dtset%nkpt*dtset%nsppol))
+ eigen(:)=zero ; resid(:)=zero
+ call outwf(cg_new,dtset,this%psps,eigen,dtfil%fnameabo_wfk,hdr,this%kg,dtset%kptns,&
+&   dim_all,mcg,dtset%mkmem,mpi_enreg,dtset%mpw,dtset%natom,&
+&   nband_sub,dtset%nkpt,this%npwarr,dtset%nsppol,&
+&   this%sub_occ(1:dim_all),resid,0,dtfil%unwff2,this%wvl%wfs,this%wvl%descr)
+
+end subroutine print_can2sub
 
 
 end module m_dmfet

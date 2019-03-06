@@ -3097,6 +3097,12 @@ subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_al
     end do
   end do
 
+!  write(std_out,*) "Vij"
+!  do iband1=1,nband
+!    write(std_out,*) Vij(iband1,:,1)
+!  enddo
+!  stop
+
   ABI_ALLOCATE(Vij_copy,(nband,nband,wan%nsppol))
   Vij_copy = Vij
 

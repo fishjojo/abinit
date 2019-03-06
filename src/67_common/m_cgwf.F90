@@ -52,6 +52,7 @@ module m_cgwf
 !!***
 
  public :: cgwf
+ public :: mksubham !Xing
 
 !!***
 

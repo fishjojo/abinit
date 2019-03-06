@@ -28,19 +28,19 @@ module m_subscf
  use defs_datatypes
  use defs_abitypes
 
- use m_cgwf
+ use m_cgtools
  use m_efield
  use m_gemm_nonlop
  use m_hdr
 
  use m_ab7_mixing
 
+ use m_cgwf,             only : mksubham
  use m_spacepar,         only : meanvalue_g
  use m_scfcv_core,       only : etotfor
  use m_rhotov,           only : rhotov
  use m_common,           only : scprqt 
  use m_newrho,           only : newrho
- use m_cgtools,          only : sqnorm_v
  use m_occ,              only : newocc
  use m_plowannier,       only : compute_oper_ks2sub
  use defs_wvltypes,      only : wvl_data
@@ -75,6 +75,8 @@ module m_subscf
 
  use m_fourier_interpol, only : transgrid
  use m_fft,              only : fftpac,fourdp
+ use m_fock,             only : fock_set_ieigen
+ use m_getghc,           only : getghc
 
  use m_paw_dmft,         only : paw_dmft_type
  use m_cgprj,            only : ctocprj
@@ -136,7 +138,7 @@ module m_subscf
    real(dp),pointer :: rhor(:,:) => null()
 
    real(dp),allocatable :: eig_sub(:)
-   complex(dpc),allocatable :: subham_sub(:,:)
+   complex(dpc),pointer :: subham_sub(:,:) => null()
 
    real(dp), pointer :: dens_mat_real(:,:) => null()
    real(dp), pointer :: emb_pot(:,:) => null()
@@ -590,11 +592,7 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
  ucvol_local = ucvol
 
  usecprj=0
-! if (this%mcprj>0) then
-!  usecprj=1
-! end if
 
-! write(std_out,*) "debug: dtset%iscf = ",dtset%iscf
 
  iscf10=mod(dtset%iscf,10)
  tollist(1)=dtset%tolmxf;tollist(2)=dtset%tolwfr
@@ -629,7 +627,6 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
 
  usefock=dtset%usefock
  nullify(fock)
- if(usefock==1) MSG_ERROR('usefock == 1, NYI')
 
  strsxc=zero
  ABI_ALLOCATE(grchempottn,(3,dtset%natom))
@@ -653,7 +650,6 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
  n1xccc=0;if (psps%n1xccc/=0) n1xccc=psps%n1xccc
  n3xccc=0;if (psps%n1xccc/=0) n3xccc=nfftf
  ABI_ALLOCATE(xccc3d,(n3xccc))
- write(std_out,*) "debug: n1xccc = ",n1xccc
 
 
 !Several parameters and arrays for the SCF mixing:
@@ -845,11 +841,6 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
  endif !end usepaw
 
 
- !prepare initial density
- !write(std_out,*) "debug: dtfil%ireadwf,dtfil%ireadden:"
- !write(std_out,*) this%dtfil%ireadwf, this%dtfil%ireadden
-
-
  if(this%ireadwf==1)then
 !  Obtain the charge density from wfs that were read previously
 !  Be careful: in PAW, rho does not include the compensation
@@ -873,8 +864,8 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
 &     dtset%ziontypat,dtset%znucl)
  endif
 
-if(this%ireadwf==1)then
- if (psps%usepaw==1) then
+ if(this%ireadwf==1)then
+  if (psps%usepaw==1) then
 
    ABI_ALLOCATE(dimcprj,(dtset%natom))
    ABI_ALLOCATE(dimcprj_srt,(dtset%natom))
@@ -905,8 +896,8 @@ if(this%ireadwf==1)then
 &   dtset%mband,mband_cprj,mcprj,dtset%mkmem,mpi_enreg,dtset%natom,dtset%nband,dtset%nkpt,&
 &   dtset%nspinor,dtset%nsppol,this%occ,dtset%paral_kgb,this%paw_dmft,dtset%pawprtvol,pawrhoij_unsym,&
 &   this%dtfil%unpaw,dtset%usewvl,dtset%wtk)
- end if
-endif
+  end if
+ endif
 
  !scf iteration
  do istep=1,nstep
@@ -1127,7 +1118,7 @@ endif
 
 !    if the mixing is the ODA mixing, compute energy and new density here
      if (dtset%iscf==22) then
-        MSG_ERROR('NYI')
+        MSG_ERROR('iscf==22 is not supported')
 !       call odamix(deltae,dtset,&
 !&       elast,energies,etotal,gprimd,gsqcut,kxc,mpi_enreg,&
 !&       my_natom,nfftf,ngfftf,nhat,nkxc,psps%ntypat,nvresid,n3xccc,optres,&
@@ -1138,7 +1129,9 @@ endif
      end if
 !    If the density mixing is required, compute the total energy here
 ! TODO: add taur taug tauresid if needed
-     optene = 0
+
+     !no orbital energy available for frozen orbitals
+     if(dim_sub<dim_all) optene = 0
      call etotfor(crystal%atindx1,deltae,diffor,dtefield,dtset,&
 &     elast,this%electronpositron,energies,&
 &     etotal,favg,fcart,fock,forold,fred,gmet,grchempottn,gresid,grewtn,grhf,grnl,grvdw,&
@@ -1367,10 +1360,10 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  type(paw_dmft_type),intent(inout) :: paw_dmft
  type(wvl_data), intent(inout) :: wvl
 
- integer :: mcg_new
+ integer :: mcg_sub,mcg_new
  integer :: usecprj_local,istwf_k,cplex,ipert
  integer :: isppol,ikg,ilm,nkpg,dimffnl,ider,idir
- integer :: ikpt_loc,ikpt,nkpt1,nband_k,my_ikpt
+ integer :: ikpt_loc,ikpt,nband_k,my_ikpt
  integer :: n1,n2,n3,n4,n5,n6,npw_k
  integer :: iband,ii,iscf
  integer :: mband_cprj,mcprj_tmp,my_nspinor
@@ -1385,16 +1378,15 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  real(dp), allocatable :: ylm_k(:,:),kinpw(:),kpg_k(:,:),subham(:)
  type(gs_hamiltonian_type) :: gs_hamk
  real(dp),allocatable :: cgrvtrial(:,:),vlocal(:,:,:,:),ffnl(:,:,:,:),ph3d(:,:,:),zshift(:)
- real(dp),allocatable :: cg_new(:,:), tmp_real(:,:),tmp_img(:,:)
+ real(dp),allocatable :: cg_sub(:,:),cg_new(:,:), tmp_real(:,:),tmp_img(:,:)
  real(dp),allocatable :: rhowfg(:,:),rhowfr(:,:)
- complex(dpc),allocatable :: dens_mat(:,:),tmp(:,:),dens_mat_can(:,:)
+ complex(dpc),allocatable :: dens_mat(:,:),tmp(:,:)
 
  type(pawcprj_type),allocatable :: cprj_tmp(:,:)
  type(pawrhoij_type),pointer :: pawrhoij_unsym(:) 
 
  !useless
- integer :: mcgq,mkgq
- real(dp),allocatable :: cgq(:,:), pwnsfacq(:,:), doccde(:)
+ real(dp),allocatable :: doccde(:)
 
  n1=dtset%ngfft(1) ; n2=dtset%ngfft(2) ; n3=dtset%ngfft(3)
  n4=dtset%ngfft(4) ; n5=dtset%ngfft(5) ; n6=dtset%ngfft(6)
@@ -1402,8 +1394,6 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  my_nspinor=max(1,dtset%nspinor/mpi_enreg%nproc_spinor)
  compch_fft=-1.d5
 
- mband_cprj=dtset%mband
- if (dtset%paral_kgb/=0) mband_cprj=mband_cprj/mpi_enreg%nproc_band
 
  usecprj_local=0;if (psps%usepaw==1) usecprj_local=1
 
@@ -1451,7 +1441,7 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
 
  ABI_ALLOCATE(vlocal,(n4,n5,n6,gs_hamk%nvloc))
 
- nkpt1 = dtset%nkpt
+
  do isppol=1,dtset%nsppol
    ikpt_loc = 0
    ikg = 0
@@ -1464,19 +1454,21 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
    call load_spin_hamiltonian(gs_hamk,isppol,vlocal=vlocal,with_nonlocal=.true.)
 
    ikpt = 0
-   do while (ikpt_loc < nkpt1)
+   do while (ikpt_loc < dtset%nkpt)
 
      ikpt_loc = ikpt_loc + 1
      ikpt = ikpt_loc
      my_ikpt = mpi_enreg%my_kpttab(ikpt)
-     nband_k=dtset%nband(ikpt+(isppol-1)*dtset%nkpt)
+
+     !nband_k=dtset%nband(ikpt+(isppol-1)*dtset%nkpt)
+
      npw_k=this%npwarr(ikpt)
      istwf_k=dtset%istwfk(ikpt)
 
      kpoint(:)=dtset%kptns(:,ikpt)
 
-     ABI_ALLOCATE(zshift,(nband_k))
-     zshift(:)=dtset%eshift 
+!     ABI_ALLOCATE(zshift,(nband_k))
+!     zshift(:)=dtset%eshift 
 
      ABI_ALLOCATE(kg_k,(3,npw_k))
      ABI_ALLOCATE(ylm_k,(npw_k,psps%mpsang*psps%mpsang*psps%useylm))
@@ -1511,20 +1503,6 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
 &         psps%usepaw,psps%useylm,ylm_k,ylmgr)
      end if
 
-!    compute and load nuclear dipole Hamiltonian at current k point
-     if(any(abs(gs_hamk%nucdipmom)>0.0)) then
-        MSG_ERROR('NYI')
-!         if(allocated(nucdipmom_k)) then
-!           ABI_DEALLOCATE(nucdipmom_k)
-!         end if
-!         ABI_ALLOCATE(nucdipmom_k,(npw_k*(npw_k+1)/2))
-!         call mknucdipmom_k(gmet,kg_k,kpoint,natom,gs_hamk%nucdipmom,nucdipmom_k,npw_k,rprimd,ucvol,xred)
-!         if(allocated(gs_hamk%nucdipmom_k)) then
-!            ABI_DEALLOCATE(gs_hamk%nucdipmom_k)
-!         end if
-!         ABI_ALLOCATE(gs_hamk%nucdipmom_k,(npw_k*(npw_k+1)/2))
-!         call load_k_hamiltonian(gs_hamk,nucdipmom_k=nucdipmom_k)
-     end if
 
 !    Load k-dependent part in the Hamiltonian datastructure
 !       - Compute 3D phase factors
@@ -1549,32 +1527,29 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
          end if
      end if
 
-     !useless
-     mcgq=1 ; mkgq=1
-     ABI_ALLOCATE(cgq,(2,mcgq))
-     ABI_ALLOCATE(pwnsfacq,(2,mkgq))
+     mcg_sub = npw_k*dim_sub
+     ABI_ALLOCATE(cg_sub,(2,mcg_sub))
+     call cgtosub(cg_sub,this%cg,npw_k,can2sub,dim_can,dim_sub) !FIXME
 
-     call subscf_mkham(this,dtset,mpi_enreg,gs_hamk,isppol,ikpt,nband_k,&
-&      cgq,pwnsfacq,mcgq,mkgq,zshift,can2sub,dim_can,dim_sub,dim_all)
+     call subscf_mkham(this,dtset,mpi_enreg,gs_hamk,ikpt,my_nspinor,&
+&      this%subham_sub(1:dim_sub,1:dim_sub),this%eig_sub(1:dim_sub),dim_sub,cg_sub,mcg_sub)
 
-
+     ABI_DEALLOCATE(cg_sub)
 
      ABI_DEALLOCATE(ffnl)
      ABI_DEALLOCATE(kg_k)
      ABI_DEALLOCATE(kpg_k)
      ABI_DEALLOCATE(ylm_k)
      ABI_DEALLOCATE(ph3d)
-     ABI_DEALLOCATE(cgq)
-     ABI_DEALLOCATE(pwnsfacq)
-     ABI_DEALLOCATE(zshift)
+!     ABI_DEALLOCATE(zshift)
 
    enddo
  enddo
 
  ABI_DEALLOCATE(vlocal)
 
- ABI_ALLOCATE(doccde,(dtset%mband*dtset%nkpt*dtset%nsppol))
- doccde(:)=zero
+ ABI_ALLOCATE(doccde,(dim_sub*dtset%nkpt*dtset%nsppol))
+ doccde=zero
 
 ! call newocc(doccde,this%eig_sub,energies%entropy,energies%e_fermie,dtset%spinmagntarget,&
 !& dtset%mband,dtset%nband,dtset%nelect,dtset%nkpt,dtset%nspinor,&
@@ -1599,24 +1574,17 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  ABI_ALLOCATE(dens_mat,(dim_sub,dim_sub))
  dens_mat = czero
  do ii=1,dim_sub
-   dens_mat(ii,ii) = cmplx(this%occ(ii),zero,kind=dp)
+   dens_mat(ii,ii) = cmplx(this%occ(ii),kind=dp)
  enddo
 
  ABI_ALLOCATE(tmp,(dim_sub,dim_sub))
  call zgemm('N','C',dim_sub,dim_sub,dim_sub,cone,dens_mat,dim_sub,this%subham_sub(1:dim_sub,1:dim_sub),dim_sub,czero,tmp,dim_sub)
  call zgemm('N','N',dim_sub,dim_sub,dim_sub,cone,this%subham_sub(1:dim_sub,1:dim_sub),dim_sub,tmp,dim_sub,czero,dens_mat,dim_sub)
-
-! ABI_ALLOCATE(dens_mat_can,(dim_can,dim_can))
-! call zgemm('N','C',dim_sub,dim_can,dim_sub,cone,dens_mat,dim_sub,can2sub,dim_sub,czero,tmp,dim_sub)
-! call zgemm('N','N',dim_can,dim_can,dim_sub,cone,can2sub,dim_can,tmp,dim_sub,czero,dens_mat_can,dim_can)
-
  ABI_DEALLOCATE(tmp)
-
-! write(std_out,*) "dens_mat_can max abs imag:", maxval(abs(aimag(dens_mat_can)))
-! ABI_DEALLOCATE(dens_mat_can)
 
  ABI_ALLOCATE(tmp_img,(dim_sub,dim_sub))
  tmp_img = aimag(dens_mat)
+! write(std_out,*) 'max dens_mat_img=',maxval(abs(tmp_img))
  if(maxval(abs(tmp_img))>tol8) then
    MSG_WARNING('Density matrix is not real!') 
    write(std_out,*) "max abs imaginary element:", maxval(abs(tmp_img))
@@ -1627,33 +1595,18 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  ABI_DEALLOCATE(tmp_img)
 
  this%dens_mat_real = real(dens_mat,kind=dp)
-! do ii=1,dim_sub
-!   write(std_out,*) this%dens_mat_real(ii,:)
-! enddo
  ABI_DEALLOCATE(dens_mat)
 
+!get cg_new
  ABI_ALLOCATE(tmp,(dim_can,dim_all))
- mcg_new = dtset%mpw*dim_all
- ABI_ALLOCATE(cg_new,(2,mcg_new))
  call zgemm('N','N',dim_can,dim_all,dim_all,cone,can2sub,dim_can,this%subham_sub,dim_all,czero,tmp,dim_can)
- ABI_ALLOCATE(tmp_real,(dim_can,dim_all))
- ABI_ALLOCATE(tmp_img,(dim_can,dim_all))
- tmp_real = real(tmp,kind=dp)
- tmp_img = aimag(tmp)
-
-! write(std_out,*) "debug: U*C:"
-! do ii=1,dim_sub
-!   write(std_out,*) tmp(ii,:)
-! enddo
- ABI_DEALLOCATE(tmp)
- 
- call dgemm('N','N',dtset%mpw,dim_all,dim_can,one,this%cg(1,:),dtset%mpw,tmp_real,dim_can,zero,cg_new(1,:),dtset%mpw)
- call dgemm('N','N',dtset%mpw,dim_all,dim_can,-one,this%cg(2,:),dtset%mpw,tmp_img,dim_can,one,cg_new(1,:),dtset%mpw)
- call dgemm('N','N',dtset%mpw,dim_all,dim_can,one,this%cg(1,:),dtset%mpw,tmp_img,dim_can,zero,cg_new(2,:),dtset%mpw)
- call dgemm('N','N',dtset%mpw,dim_all,dim_can,one,this%cg(2,:),dtset%mpw,tmp_real,dim_can,one,cg_new(2,:),dtset%mpw)
-
- ABI_DEALLOCATE(tmp_real)
- ABI_DEALLOCATE(tmp_img)
+ ikpt = 1
+ npw_k=this%npwarr(ikpt)
+ mcg_new = npw_k*dim_all
+ ABI_ALLOCATE(cg_new,(2,mcg_new))
+ call cgtosub(cg_new,this%cg,npw_k,tmp,dim_can,dim_all) !FIXME 
+ ABI_DEALLOCATE(tmp) 
+!end get cg_new
 
  !FIXME
  !compute kinetic energy
@@ -1674,6 +1627,10 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  call mkrho(cg_new,dtset,gprimd,irrzon,kg,mcg_new,mpi_enreg,this%npwarr,this%occ,paw_dmft,phnons,&
 & rhowfg,rhowfr,crystal%rprimd,tim_mkrho,ucvol,wvl%den,wvl%wfs)
 
+
+ mband_cprj=dtset%mband
+ if (dtset%paral_kgb/=0) mband_cprj=mband_cprj/mpi_enreg%nproc_band
+
  if (iscf>0.or.iscf==-3) then
 !  PAW: Build new rhoij quantities from new occ then symetrize them
 !  Compute and add the compensation density to rhowfr to get the total density
@@ -1688,6 +1645,7 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
 !     end if
      usecprj_local = 0 !have cg_new, need cprj
      if (usecprj_local==1) then
+        MSG_BUG('You should not be here!')
 !       call pawmkrhoij(atindx,atindx1,cprj,gs_hamk%dimcprj,dtset%istwfk,dtset%kptopt,dtset%mband,mband_cprj,&
 !&       mcprj_local,dtset%mkmem,mpi_enreg,natom,dtset%nband,dtset%nkpt,dtset%nspinor,dtset%nsppol,&
 !&       occ,dtset%paral_kgb,paw_dmft,dtset%pawprtvol,pawrhoij_unsym,dtfil%unpaw,&
@@ -1770,8 +1728,8 @@ end subroutine subscf_vtorho
 !! CHILDREN
 !!
 !! SOURCE
-subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,isppol,ikpt,nband_k,&
-&                       cgq,pwnsfacq,mcgq,mkgq,zshift,can2sub,dim_can,dim_sub,dim_all)
+subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,ikpt,my_nspinor,subham_sub,eig_sub,nband_k,&
+&                       cg,mcg)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -1784,109 +1742,225 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,isppol,ikpt,nband_k,&
 
  type(subscf_type),intent(inout):: this
  type(gs_hamiltonian_type), intent(inout) :: gs_hamk
- integer,intent(in) :: isppol,ikpt,nband_k
- real(dp),intent(in) :: zshift(nband_k)
-
  type(dataset_type),intent(in) :: dtset
  type(MPI_type),intent(in) :: mpi_enreg
 
- integer, intent(in) :: dim_can,dim_sub,dim_all
- complex(dpc), intent(in) :: can2sub(dim_can,dim_all)
+ integer,intent(in) :: ikpt,my_nspinor,nband_k,mcg
+ real(dp),intent(in) :: cg(2,mcg)
+ real(dp),intent(inout) :: eig_sub(nband_k)
+ complex(dpc),intent(inout) :: subham_sub(nband_k,nband_k)
 
- integer :: npw_k,mgsc
-
- integer :: use_subovl = 0
- integer :: berryopt = 0, nline = 0
- integer :: chkexit = 0, quit = 0
-
- integer :: icg = 0, igsc = 0, my_nspinor = 1, inonsc = 1
- integer :: wfoptalg, ierr, iband,ii,isubh
-
- real(dp),allocatable :: gsc(:,:),subham(:)
- real(dp),allocatable :: subovl(:),subvnl(:),resid_k(:)
- complex(dpc),allocatable::subham_full(:,:)
-
- real(dp), allocatable :: rwork(:)
- complex(dpc), allocatable :: zwork(:)
+!local variables
+ integer,parameter :: icg = 0
+ integer :: npw_k
+ integer :: iband1,iband2,isubh
  integer :: lwork,info
 
- !useless stuffs
- integer, intent(in) :: mcgq,mkgq
- real(dp), intent(in) :: cgq(2,mcgq),pwnsfacq(2,mkgq)
- real(dp) :: dphase_k(3)
- type(efield_type) :: dtefield
-
- ABI_ALLOCATE(subovl,(nband_k*(nband_k+1)*use_subovl))
- ABI_ALLOCATE(subvnl,(nband_k*(nband_k+1)*(1-gs_hamk%usepaw)))
- ABI_ALLOCATE(resid_k,(nband_k))
-
- wfoptalg=mod(dtset%wfoptalg,100)
+ real(dp),allocatable :: subham(:)
+ real(dp), allocatable :: rwork(:)
+ complex(dpc), allocatable :: zwork(:)
 
  npw_k=this%npwarr(ikpt)
- mgsc=nband_k*npw_k*my_nspinor*gs_hamk%usepaw
- ABI_STAT_ALLOCATE(gsc,(2,mgsc), ierr)
- ABI_CHECK(ierr==0, "out of memory in gsc")
- gsc=zero
 
  ABI_ALLOCATE(subham,(nband_k*(nband_k+1)))
  subham(:) = zero
+ call wftosubham(subham,gs_hamk,mpi_enreg,cg,mcg,icg,nband_k,dtset%nbdblock,npw_k,my_nspinor,dtset%prtvol)
 
- call cgwf(berryopt,this%cg,cgq,chkexit,dtset%cpus,dphase_k,dtefield,this%dtfil%filnam_ds(1),&
-&          gsc,gs_hamk,icg,igsc,ikpt,inonsc,isppol,dtset%mband,this%mcg,mcgq,mgsc,mkgq,&
-&          mpi_enreg,dtset%mpw,nband_k,dtset%nbdblock,dtset%nkpt,nline,npw_k,this%npwarr,my_nspinor,&
-&          dtset%nsppol,dtset%ortalg,dtset%prtvol,this%pwind,this%pwind_alloc,this%pwnsfac,pwnsfacq,quit,resid_k,&
-&          subham,subovl,subvnl,dtset%tolrde,dtset%tolwfr,use_subovl,wfoptalg,zshift)
 
- ABI_DEALLOCATE(resid_k)
-
- ABI_ALLOCATE(subham_full,(nband_k,nband_k))
  isubh = 1
- do iband=1,nband_k
-   do ii=1,iband
-     if(ii/=iband)then
-       subham_full(ii,iband)=cmplx(subham(isubh),subham(isubh+1),kind=dp)
-       subham_full(iband,ii)=cmplx(subham(isubh),-subham(isubh+1),kind=dp)
+ do iband1=1,nband_k
+   do iband2=1,iband1
+     if(iband2/=iband1)then
+       subham_sub(iband2,iband1)=cmplx(subham(isubh),subham(isubh+1),kind=dp)
+       subham_sub(iband1,iband2)=cmplx(subham(isubh),-subham(isubh+1),kind=dp)
      else
-       if(abs(subham(isubh+1)).gt.1.d-8) MSG_ERROR(' Hamiltonian is not Hermitian!') 
-       subham_full(ii,iband)=cmplx(subham(isubh),0.0,kind=dp) 
+       if(abs(subham(isubh+1))>tol8) MSG_ERROR('Hamiltonian is not Hermitian!') 
+       subham_sub(iband2,iband1)=cmplx(subham(isubh),kind=dp) 
      endif
      isubh=isubh+2
    enddo
  enddo
 
- write(std_out,*)" max abs imaginary subham_can element:",maxval(abs(aimag(subham_full)))
-
- call compute_oper_ks2sub(subham_full,this%subham_sub(1:dim_sub,1:dim_sub),can2sub,nband_k,dim_sub)
-
- write(std_out,*)" max abs imaginary subham_sub element:",maxval(abs(aimag(this%subham_sub)))
-! do ii=1,dim_sub
-!   write(std_out,*) this%subham_sub(ii,:)
-! enddo
-
  if(this%has_embpot) then
-   do iband=1,dim_sub
-     do ii=1,dim_sub
-       this%subham_sub(iband,ii) = this%subham_sub(iband,ii)+cmplx(this%emb_pot(iband,ii),zero,kind=dp)
+   do iband1=1,nband_k
+     do iband2=1,nband_k
+       subham_sub(iband1,iband2) = subham_sub(iband1,iband2)+cmplx(this%emb_pot(iband1,iband2),kind=dp)
      enddo
    enddo
  endif
 
- ABI_ALLOCATE(rwork,(3*dim_sub-2))
- lwork = 65*dim_sub ! Value to optimize speed of the diagonalization
+ ABI_ALLOCATE(rwork,(3*nband_k-2))
+ lwork = 65*nband_k ! Value to optimize speed of the diagonalization
  ABI_ALLOCATE(zwork,(lwork))
- call zheev('v','u',dim_sub,this%subham_sub(1:dim_sub,1:dim_sub),dim_sub,this%eig_sub(1:dim_sub),zwork,lwork,rwork,info)
- if(info.ne.0) MSG_ERROR(' Diagonalization failed!')
- write(std_out,*) " Eigenvalues in subspace dft:"
- do iband=1,dim_sub
-   write(std_out,'(f20.15)') this%eig_sub(iband)
+ call zheev('v','u',nband_k,subham_sub,nband_k,eig_sub,zwork,lwork,rwork,info)
+ if(info.ne.0) MSG_ERROR('Hamiltonian diagonalization failed!')
+
+ write(std_out,*) "Eigenvalues in subspace DFT:"
+ do iband1=1,nband_k
+   write(std_out,'(f20.12)') eig_sub(iband1)
  enddo
 
  ABI_DEALLOCATE(subham)
- ABI_DEALLOCATE(subham_full) 
  ABI_DEALLOCATE(rwork)
  ABI_DEALLOCATE(zwork)
 
 end subroutine subscf_mkham
+
+
+!!****f* m_subscf/wftosubham
+!! NAME
+!! wftosubham
+!!
+!! FUNCTION
+!! build subspace hamiltonian
+!!
+!! INPUTS
+!!
+!! OUTPUT
+!!
+!! SIDE EFFECTS
+!!
+!! NOTES
+!!
+!! TODO
+!!
+!! PARENTS
+!! subscf_mkham
+!!
+!! SOURCE
+subroutine wftosubham(subham,gs_hamk,mpi_enreg,cg,mcg,icg,nband,nbdblock,npw,nspinor,prtvol)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'wftosubham'
+!End of the abilint section
+
+ implicit none
+
+ type(gs_hamiltonian_type),intent(inout) :: gs_hamk
+ type(MPI_type),intent(in) :: mpi_enreg
+
+ integer,intent(in) :: icg,mcg
+ integer,intent(in) :: npw,nband,nbdblock,nspinor,prtvol
+
+ real(dp),intent(in) :: cg(2,mcg)
+ real(dp),intent(out) :: subham(nband*(nband+1))
+
+!local variables
+ integer,parameter :: cpopt=-1, tim_getghc=1, use_vnl=0, use_subovl=0, igsc=0
+ integer :: iblock,nblock,ibandmin,ibandmax,iband
+ integer :: icg_shift,sij_opt,istwf_k,isubh,isubo
+ integer :: mgsc=1
+
+ real(dp) :: eval
+ real(dp),allocatable :: cwavef(:,:), ghc(:,:), gvnlc(:,:)
+ real(dp) :: gsc_dummy(2,1),subovl_dummy(0),subvnl_dummy(0)
+
+ type(pawcprj_type) :: cprj_dum(1,1)
+
+
+ ABI_ALLOCATE(ghc,(2,npw*nspinor))
+ ABI_ALLOCATE(gvnlc,(2,npw*nspinor))
+ ABI_ALLOCATE(cwavef,(2,npw*nspinor))
+
+ istwf_k=gs_hamk%istwf_k
+
+ isubh=1;isubo=1
+
+ nblock=(nband-1)/nbdblock+1
+ ! Loop over blocks of bands. In the standard band-sequential algorithm, nblock=nband.
+ do iblock=1,nblock
+
+   ! Loop over bands in a block
+   ! This loop can be MPI-parallelized, over processors attached to the same k point
+   ibandmin=1+(iblock-1)*nbdblock
+   ibandmax=min(iblock*nbdblock,nband)
+
+   ! Big iband loop
+   do iband=ibandmin,ibandmax
+     icg_shift=npw*nspinor*(iband-1)+icg
+
+     call cg_zcopy(npw*nspinor,cg(1,1+icg_shift),cwavef)
+
+!    By setting ieigen to iband, Fock contrib. of this iband to the energy will be calculated
+     call fock_set_ieigen(gs_hamk%fockcommon,iband)
+
+     sij_opt=0
+     call getghc(cpopt,cwavef,cprj_dum,ghc,gsc_dummy,gs_hamk,gvnlc,&
+&     eval,mpi_enreg,1,prtvol,sij_opt,tim_getghc,0)
+
+   enddo
+
+   call mksubham(cg,ghc,gsc_dummy,gvnlc,iblock,icg,igsc,istwf_k,&
+&   isubh,isubo,mcg,mgsc,nband,nbdblock,npw,&
+&   nspinor,subham,subovl_dummy,subvnl_dummy,use_subovl,use_vnl,mpi_enreg%me_g0)
+
+ enddo
+
+ ABI_DEALLOCATE(ghc)
+ ABI_DEALLOCATE(gvnlc)
+ ABI_DEALLOCATE(cwavef)
+
+end subroutine wftosubham
+
+
+!!****f* m_subscf/cgtosub
+!! NAME
+!! cgtosub
+!!
+!! FUNCTION
+!! transform cg to subspace
+!!
+!! INPUTS
+!!
+!! OUTPUT
+!!
+!! SIDE EFFECTS
+!!
+!! NOTES
+!!
+!! TODO
+!!
+!! PARENTS
+!!
+!!
+!! SOURCE
+subroutine cgtosub(cg_sub,cg,npw,can2sub,dim_can,dim_sub)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'cgtosub'
+!End of the abilint section
+
+ implicit none
+
+ integer,intent(in) :: npw,dim_can,dim_sub
+ real(dp),intent(in) :: cg(2,npw*dim_can)
+ real(dp),intent(inout) :: cg_sub(2,npw*dim_sub)
+ complex(dpc),intent(in) :: can2sub(dim_can,dim_sub)
+
+!local variables
+ real(dp),allocatable :: can2sub_re(:,:),can2sub_im(:,:) 
+
+
+ ABI_ALLOCATE(can2sub_re,(dim_can,dim_sub))
+ ABI_ALLOCATE(can2sub_im,(dim_can,dim_sub))
+ can2sub_re = real(can2sub,kind=dp)
+ can2sub_im = aimag(can2sub)
+
+ call dgemm('N','N',npw,dim_sub,dim_can, one,cg(1,:),npw,can2sub_re,dim_can,zero,cg_sub(1,:),npw)
+ call dgemm('N','N',npw,dim_sub,dim_can,-one,cg(2,:),npw,can2sub_im,dim_can, one,cg_sub(1,:),npw)
+ call dgemm('N','N',npw,dim_sub,dim_can, one,cg(1,:),npw,can2sub_im,dim_can,zero,cg_sub(2,:),npw)
+ call dgemm('N','N',npw,dim_sub,dim_can, one,cg(2,:),npw,can2sub_re,dim_can, one,cg_sub(2,:),npw)
+
+ ABI_DEALLOCATE(can2sub_re)
+ ABI_DEALLOCATE(can2sub_im)
+
+end subroutine cgtosub
 
 
 end module m_subscf
