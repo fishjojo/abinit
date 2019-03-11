@@ -29,6 +29,8 @@ module m_gstate_sub
  use libxc_functionals
  use m_errors
  use m_xmpi
+ use m_mpinfo
+ use m_libpaw_tools
 
  use m_gemm_nonlop
  use m_bandfft_kpt
@@ -57,7 +59,6 @@ module m_gstate_sub
  use m_results_gs,       only : results_gs_type
  use m_energies,         only : energies_init
 
- use m_mpinfo,           only : proc_distrb_cycle
 
  use m_paw_dmft,         only : init_sc_dmft,destroy_sc_dmft,paw_dmft_type
  use m_electronpositron, only : electronpositron_type,init_electronpositron,destroy_electronpositron
@@ -70,6 +71,7 @@ module m_gstate_sub
 
  public :: gstate_sub
  public :: gstate_sub_input_var_init
+ public :: init_local_mpi_enreg
 
  type, public :: gstate_sub_input_var
 
@@ -176,7 +178,6 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  type(pawang_type),intent(inout) :: pawang
  type(pawfgr_type) :: pawfgr
 
-
  integer, intent(in) :: dim_can, dim_sub, dim_all
  real(dp),intent(in) :: sub_occ(dim_all)
 
@@ -227,7 +228,6 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  real(dp),pointer :: rhor(:,:),rhog(:,:),taug(:,:),taur(:,:)
 
  type(pawrhoij_type),pointer :: pawrhoij(:)
-
 
  DBG_ENTER("COLL")
 
@@ -634,6 +634,114 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 end subroutine gstate_sub
 
 
+
+
+subroutine init_local_mpi_enreg(l_mpi_enreg,dtset,mband,nband)
+
+ implicit none 
+
+ type(MPI_type),intent(inout) :: l_mpi_enreg
+ type(dataset_type),intent(inout) :: dtset
+ integer,intent(in) :: mband,nband(dtset%nkpt*dtset%nsppol)
+
+ integer :: nproc,ii
+ character(len=500) :: message
+ 
+ call init_mpi_enreg(l_mpi_enreg)
+
+ l_mpi_enreg%pw_unbal_thresh=dtset%pw_unbal_thresh
+
+ call initmpi_img(dtset,l_mpi_enreg,-1)
+
+ nproc=l_mpi_enreg%nproc_cell
+
+ l_mpi_enreg%paral_kgb=dtset%paral_kgb
+
+
+ if(dtset%paral_kgb/=0)then
+   l_mpi_enreg%nproc_kpt=dtset%npkpt
+   l_mpi_enreg%nproc_fft=dtset%npfft
+   l_mpi_enreg%nproc_band=dtset%npband
+   l_mpi_enreg%nproc_spinor=min(dtset%npspinor,dtset%nspinor)
+   l_mpi_enreg%bandpp=dtset%bandpp
+ else
+   l_mpi_enreg%bandpp = dtset%bandpp
+!  Additional setting in case of a Fock exchange of PBE0 calculation
+   if (dtset%usefock==1) then
+       MSG_ERROR('NYI')
+!       if (dtset%nphf>1) l_mpi_enreg%paral_hf=1
+!       l_mpi_enreg%nproc_hf = dtset%nphf
+!       if (dtset%npkpt/=1) then
+!         l_mpi_enreg%nproc_kpt = dtset%npkpt
+!       else
+!         l_mpi_enreg%nproc_kpt = l_mpi_enreg%nproc_cell/l_mpi_enreg%nproc_hf
+!       end if
+   else
+       l_mpi_enreg%nproc_kpt = l_mpi_enreg%nproc_cell
+   end if
+ end if
+
+ if(dtset%paral_kgb>=0) then
+!  Compute processor distribution over perturbations
+   l_mpi_enreg%paral_pert=dtset%paral_rf
+   if (l_mpi_enreg%paral_pert==1) then
+     MSG_ERROR('NYI!')
+   endif
+
+!  Compute processor distribution over kpt (and eventually band-fft)
+   call initmpi_grid(l_mpi_enreg)
+
+!  Initialize tabs used for k/spin parallelism (with sequential-type values)
+   ABI_ALLOCATE(l_mpi_enreg%proc_distrb,(dtset%nkpt,mband,dtset%nsppol))
+   ABI_ALLOCATE(l_mpi_enreg%my_kpttab,(dtset%nkpt))
+   l_mpi_enreg%proc_distrb(:,:,:)=0
+   l_mpi_enreg%my_kpttab(:)=(/(ii,ii=1,dtset%nkpt)/)
+   l_mpi_enreg%my_isppoltab(:)=1;if (dtset%nsppol==1) l_mpi_enreg%my_isppoltab(2)=0
+
+
+!  HF or hybrid calculation : initialization of the array distrb_hf
+   if (dtset%usefock==1) then
+     MSG_ERROR('NYI')
+!     ABI_ALLOCATE(l_mpi_enreg%distrb_hf,(dtset%nkpthf,dtset%nbandhf,1))
+!    The dimension of distrb_hf are given by %nkpthf and %nbandhf.
+!    We assume that there will be no dependence in spinpol for all the occupied states.
+!     l_mpi_enreg%distrb_hf=0
+   end if
+
+   !nkpt_me=dtset%nkpt !FIXME
+   if(xmpi_paral==1) then
+     l_mpi_enreg%paralbd=1
+     call distrb2(mband,nband,dtset%nkpt,nproc,dtset%nsppol,l_mpi_enreg)
+!    HF or hybrid calculation : define the occupied states distribution (in array distrb_hf)
+     if (dtset%usefock==1) then
+       MSG_ERROR('NYI')
+!       call distrb2_hf(dtsets(idtset)%nbandhf,dtsets(idtset)%nkpthf,nproc,nsppol,mpi_enregs(idtset))
+     end if
+   endif
+
+ endif
+
+ if(.not.mpi_distrib_is_ok(l_mpi_enreg,mband,dtset%nkpt,dtset%mkmem,dtset%nsppol,msg=message) )then
+   MSG_WARNING(message)
+ endif
+
+ call abi_io_redirect(new_io_comm=l_mpi_enreg%comm_world)
+ call libpaw_write_comm_set(l_mpi_enreg%comm_world)
+
+ call init_distribfft(l_mpi_enreg%distribfft,'c',l_mpi_enreg%nproc_fft,dtset%ngfft(2),dtset%ngfft(3))
+
+ if( xmpi_mpiio==1 .and. l_mpi_enreg%paral_kgb == 1 .and. &
+&  any(dtset%iomode == [IO_MODE_MPI, IO_MODE_ETSF])) then
+     ABI_ALLOCATE(l_mpi_enreg%my_kgtab,(dtset%mpw,dtset%mkmem))
+ end if
+
+ call init_distribfft(l_mpi_enreg%distribfft,'f', l_mpi_enreg%nproc_fft,dtset%ngfftdg(2),dtset%ngfftdg(3))
+
+ dtset%paral_atom=0
+ call initmpi_atom(dtset,l_mpi_enreg)
+
+
+end subroutine init_local_mpi_enreg
 
 
 end module m_gstate_sub

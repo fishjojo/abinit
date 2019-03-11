@@ -580,33 +580,30 @@ subroutine dmfet_core(this,rprim,codvsn)
 !arrays
  real(dp),allocatable :: dens_tot(:,:),emb_pot(:,:)
 
- dim_sub = this%dim_sub !use all of sub orbitals for now
+!local MPI
+ type(MPI_type) :: l_mpi_enreg
+
+
+ dim_sub = this%dim_all !use all of sub orbitals for now
 
 !modify dtset for subspace scf calculation
  this%dtset%mband = this%dim_all
  this%dtset%nband(:) = this%dim_all 
 !end modify dtset
 
+ call init_local_mpi_enreg(l_mpi_enreg,this%dtset,this%dtset%mband,this%dtset%nband)
 
  bstruct = ebands_from_dtset(this%dtset, this%npwarr)
  call hdr_init(bstruct,codvsn,this%dtset,hdr,this%pawtab,0,this%psps,this%wvl%descr,&
-& comm_atom=this%mpi_enreg%comm_atom,mpi_atmtab=this%mpi_enreg%my_atmtab)
+& comm_atom=l_mpi_enreg%comm_atom,mpi_atmtab=l_mpi_enreg%my_atmtab)
  call ebands_free(bstruct)
 
  ABI_ALLOCATE(dens_tot,(dim_sub,dim_sub))
 
-!test can2sub as unit matrix
-! this%can2sub = czero
-! do i=1,this%dim_all
-!   this%can2sub(i,i) = cmplx(one,zero,kind=dp)
-! enddo
-
-! call print_can2sub(this,this%dtset,this%dtfil,hdr,this%mpi_enreg)
-! stop
 
  !total scf calc in subspace
  call init_results_gs(this%dtset%natom,this%dtset%nsppol,res_tot)
- call gstate_sub(this%acell,this%dtset,this%psps,rprim,res_tot,this%mpi_enreg,this%dtfil,this%wvl,&
+ call gstate_sub(this%acell,this%dtset,this%psps,rprim,res_tot,l_mpi_enreg,this%dtfil,this%wvl,&
 & this%cg,this%pawtab,this%pawrad,this%pawang,this%crystal%xred,&
 & dens_tot,this%can2sub,this%n_canonical,dim_sub,this%dim_all,this%sub_occ(1:this%dim_all),&
 & hdr=hdr) 

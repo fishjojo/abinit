@@ -139,6 +139,7 @@ module m_xg
   public :: xg_init
   public :: xg_set
   public :: xg_get
+  public :: xg_get_cmplx_array
   public :: xg_setBlock
   public :: xg_free
 
@@ -643,6 +644,32 @@ module m_xg
 
   end subroutine xg_get
 !!***
+
+
+!!****f* m_xg/xg_get_cmplx_array
+!!
+!! NAME
+!! xg_get_cmplx_array
+  subroutine xg_get_cmplx_array(xg,array)
+
+    implicit none
+
+    type(xg_t), intent(inout) :: xg
+    complex(kind=8), intent(out) :: array(:,:)
+    double precision :: tsec(2)
+
+    call timab(tim_get,1,tsec)
+
+    select case (xg%space)
+    case (SPACE_C)
+      call zcopy(xg%rows*xg%cols,xg%vecC,1,array,1)
+    end select
+
+    call timab(tim_get,2,tsec)
+
+  end subroutine xg_get_cmplx_array
+!!***
+
 
 !!****f* m_xg/xgBlock_get
 !!
