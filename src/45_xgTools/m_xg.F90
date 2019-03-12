@@ -652,6 +652,13 @@ module m_xg
 !! xg_get_cmplx_array
   subroutine xg_get_cmplx_array(xg,array)
 
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'xg_get_cmplx_array'
+!End of the abilint section
+
     implicit none
 
     type(xg_t), intent(inout) :: xg

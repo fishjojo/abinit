@@ -638,16 +638,47 @@ end subroutine gstate_sub
 
 subroutine init_local_mpi_enreg(l_mpi_enreg,dtset,mband,nband)
 
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'init_local_mpi_enreg'
+!End of the abilint section
+
  implicit none 
 
  type(MPI_type),intent(inout) :: l_mpi_enreg
  type(dataset_type),intent(inout) :: dtset
  integer,intent(in) :: mband,nband(dtset%nkpt*dtset%nsppol)
 
- integer :: nproc,ii
+ integer :: nproc,ii,irank,bandpp,npband
  character(len=500) :: message
- 
+
+ integer,allocatable :: ranks(:)
+
+
  call init_mpi_enreg(l_mpi_enreg)
+
+ nproc = l_mpi_enreg%nproc
+ call xmpi_comm_free(l_mpi_enreg%comm_world)
+
+ do bandpp = 1,mband
+   if(mod(mband,bandpp) /= 0) cycle
+   npband = mband/bandpp
+   if(npband <= nproc) exit
+ enddo
+ dtset%npband = npband
+ dtset%bandpp = bandpp
+ dtset%npkpt = 1
+ dtset%npfft = 1
+ dtset%npspinor = 1
+
+ ABI_ALLOCATE(ranks,(npband))
+ ranks = (/((irank-1),irank=1,npband)/)
+ l_mpi_enreg%comm_world = xmpi_subcomm(xmpi_world,npband,ranks)
+ l_mpi_enreg%me = xmpi_comm_rank(l_mpi_enreg%comm_world)
+ l_mpi_enreg%nproc = xmpi_comm_size(l_mpi_enreg%comm_world)
+
 
  l_mpi_enreg%pw_unbal_thresh=dtset%pw_unbal_thresh
 
@@ -711,7 +742,7 @@ subroutine init_local_mpi_enreg(l_mpi_enreg,dtset,mband,nband)
    !nkpt_me=dtset%nkpt !FIXME
    if(xmpi_paral==1) then
      l_mpi_enreg%paralbd=1
-     call distrb2(mband,nband,dtset%nkpt,nproc,dtset%nsppol,l_mpi_enreg)
+     call distrb2(mband,nband,dtset%nkpt,l_mpi_enreg%nproc_cell,dtset%nsppol,l_mpi_enreg)
 !    HF or hybrid calculation : define the occupied states distribution (in array distrb_hf)
      if (dtset%usefock==1) then
        MSG_ERROR('NYI')

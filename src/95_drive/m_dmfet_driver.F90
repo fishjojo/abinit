@@ -183,7 +183,7 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
  comm_psp=mpi_enreg%comm_cell
  call pspini(dtset,dtfil,ecore,psp_gencond,gsqcutc_eff,gsqcut_eff,&
 & pawrad,pawtab,psps,rprimd,comm_mpi=comm_psp)
- if(psp_gencond==1) write(std_out,*) "psp has been recomputed!"
+! if(psp_gencond==1) write(std_out,*) "psp has been recomputed!"
 
 !========================================
 !read wavefunction from previous DFT calc

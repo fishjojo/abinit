@@ -3075,6 +3075,8 @@ subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_al
   complex(dpc), allocatable :: zwork(:)
   integer :: lwork,info
 
+  character(len=500) :: message
+
   !nband = wan%bandf_wan-wan%bandi_wan+1
 
   ABI_ALLOCATE(Vij,(nband,nband,wan%nsppol))
@@ -3150,8 +3152,13 @@ subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_al
   do i=1,dim_imp
     if(abs(imp_occ_srt(i)-2.0_dp)<tol8) imp_occ_srt(i)=2.0_dp
   enddo
-  write(std_out,*) "imp_occ:"
-  write(std_out,*) imp_occ_srt(:)
+
+  write(message,'(2a)') ch10," imp_occ:"
+  call wrtout(std_out,message,'COLL')
+  do i=1,dim_imp
+    write(message,'(f14.10)') imp_occ_srt(i)
+    call wrtout(std_out,message,'COLL')
+  enddo 
 
   ABI_DEALLOCATE(imp_occ)
 
@@ -3219,8 +3226,14 @@ subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_al
   do i=1,dim_bath
     if(abs(bath_occ_srt(i)-2.0_dp)<tol8) bath_occ_srt(i)=2.0_dp
   enddo
-  write(std_out,*) "bath_occ:"
-  write(std_out,*) bath_occ_srt(:)
+
+  write(message,'(2a)') ch10," bath_occ:"
+  call wrtout(std_out,message,'COLL')
+  do i=1,dim_bath
+    write(message,'(f14.10)') bath_occ_srt(i)
+    call wrtout(std_out,message,'COLL')
+  enddo 
+
 
   ABI_DEALLOCATE(bath_occ)
 
@@ -3285,20 +3298,20 @@ subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_al
 
   do i=1,dim_all
     if(abs(tmp(i,i)-one) > tol8) then
-      write(std_out,*) 'diag:',tmp(i,i)
-      MSG_ERROR('subspace orbitals not normalized!')
+      write(message,'(2a)') ch10,'subspace orbitals not normalized!'
+      MSG_ERROR(message)
     endif
     do j =i+1,dim_all
       if(abs(tmp(i,j)) > tol8) then
-        write(std_out,*) "ovlp:",i,j,tmp(i,j)
-        MSG_ERROR('subspace orbitals not orthogonal!')
+        write(message,'(2a)') ch10,'subspace orbitals not orthogonal!'
+        MSG_ERROR(message)
       endif
     enddo
   enddo
   ABI_DEALLOCATE(tmp)
 
 
-  nelec = 0.0_dp
+  nelec = zero
   do i=1,dim_imp
     nelec=nelec+imp_occ_srt(i)
   enddo
@@ -3306,8 +3319,9 @@ subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_al
     nelec=nelec+bath_occ_srt(i)
   enddo
 
-  write(std_out,*) 'imp_occ + bath_occ = ',nelec 
-
+  
+  write(message,'(2a,f12.6)') ch10,' imp_occ + bath_occ = ',nelec 
+  call wrtout(std_out,message,'COLL')
 
   dim_sub = 0
   do i=1,min(dim_imp,dim_bath)

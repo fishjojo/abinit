@@ -167,7 +167,6 @@ subroutine dmfet_init(this,acell,crystal,dtfil,dtset,psps,mpi_enreg,&
 
  real(dp), intent(in) :: e_fermie,ecore
 
- logical :: DEBUG=.FALSE.
 
  DBG_ENTER("COLL")
 
@@ -321,6 +320,7 @@ subroutine dmfet_subspac(this)
  integer :: ngfft(18)
  integer :: usecprj,mband_cprj,mcprj,my_nspinor
  integer :: iatom,idir,iorder_cprj,ctocprj_choice,ncpgr
+ character(len=500) :: message
 
 
  ABI_ALLOCATE(dimcprj,(this%dtset%natom))
@@ -362,10 +362,11 @@ subroutine dmfet_subspac(this)
  ABI_ALLOCATE(this%sub_occ,(nband))
  
  call get_can2sub(wan,1,this%occ,nband,this%can2sub,this%sub_occ,this%dim_imp,this%dim_sub,this%dim_all)
- write(std_out,*) 'dim_imp = ', this%dim_imp
- write(std_out,*) 'dim_sub = ', this%dim_sub
- write(std_out,*) 'dim_all = ', this%dim_all
 
+ write(message,'(3(a,i0,a))') ' dim_imp = ', this%dim_imp, ch10,&
+& ' dim_sub = ', this%dim_sub, ch10,&
+& ' dim_all = ', this%dim_all, ch10
+ call wrtout(std_out,message,'COLL')
 
 ! call dmfet_wan2sub(this,wan)
 
@@ -608,6 +609,8 @@ subroutine dmfet_core(this,rprim,codvsn)
 & dens_tot,this%can2sub,this%n_canonical,dim_sub,this%dim_all,this%sub_occ(1:this%dim_all),&
 & hdr=hdr) 
 
+ stop
+
 
  nsubsys = this%dtset%nsubsys
  ABI_DATATYPE_ALLOCATE(sub_dtsets,(nsubsys))
@@ -686,12 +689,12 @@ subroutine dmfet_run(this,rprim,codvsn)
  character(len=500) :: message
 
 
- write(message,'(2a,i3)') ch10,&
+ write(message,'(2a)') ch10,&
 &   '================================================================================='
  call wrtout(std_out,message,'COLL')
  call wrtout(ab_out,message,'COLL')
 
- write(message,'(2a,i3)') ch10,&
+ write(message,'(2a)') ch10,&
 &   '==                           Welcome to sDMFET module                         =='
  call wrtout(std_out,message,'COLL')
  call wrtout(ab_out,message,'COLL')
@@ -746,6 +749,7 @@ subroutine build_subsys(dtset,sub_dtsets,nsubsys)
 
  integer :: i, j, k, ioff, sub_natom
  integer,allocatable :: ia(:)
+ character(len=500) :: message
 
  ABI_ALLOCATE(ia,(dtset%natom))
 
@@ -778,7 +782,10 @@ subroutine build_subsys(dtset,sub_dtsets,nsubsys)
 200 enddo
 
    call dtset_chkneu(dtset%charge,sub_dtsets(i),dtset%occopt)
-   write(std_out,*) "No. of electrons in subsysetem ",i,": ",sub_dtsets(i)%nelect 
+
+   write(message,'(2a,i0,a,i0)') ch10,"No. of electrons in subsysetem ",i,": ",sub_dtsets(i)%nelect
+   call wrtout(std_out,message,'COLL')
+
    ioff = ioff + sub_natom
  enddo
 
@@ -889,7 +896,7 @@ subroutine print_vemb(this,dtset,hdr,dtfil,crystal,mpi_enreg,pawfgr,kg,npwarr,cg
  ABI_DEALLOCATE(tmp)
  ABI_DEALLOCATE(vemb_cpl)
 
- write(std_out,*) " max abs imaginary vemb_can element:", maxval(abs(aimag(vemb_can)))
+! write(std_out,*) " max abs imaginary vemb_can element:", maxval(abs(aimag(vemb_can)))
 !end transformation
 
  my_nspinor=max(1,dtset%nspinor/mpi_enreg%nproc_spinor)
