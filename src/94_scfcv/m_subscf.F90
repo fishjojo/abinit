@@ -1523,11 +1523,11 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
      call mkkin(dtset%ecut,dtset%ecutsm,dtset%effmass_free,gmet,kg_k,kinpw,kpoint,npw_k,0,0)
 
 !    Compute (k+G) vectors (only if useylm=1)
-!     nkpg=3*optforces*dtset%nloalg(3)
-!     ABI_ALLOCATE(kpg_k,(npw_k,nkpg))
-!     if ((mpi_enreg%paral_kgb/=1.or.istep<=1).and.nkpg>0) then
-!       call mkkpg(kg_k,kpg_k,kpoint,nkpg,npw_k)
-!     end if
+     nkpg=3*optforces*dtset%nloalg(3)
+     ABI_ALLOCATE(kpg_k,(npw_k,nkpg))
+     if ((mpi_enreg%paral_kgb/=1.or.istep<=1).and.nkpg>0) then
+       call mkkpg(kg_k,kpg_k,kpoint,nkpg,npw_k)
+     end if
 
 !    Compute nonlocal form factors ffnl at all (k+G):
      ider=0;idir=0;dimffnl=1
