@@ -659,26 +659,29 @@ subroutine init_local_mpi_enreg(l_mpi_enreg,dtset,mband,nband)
 
  call init_mpi_enreg(l_mpi_enreg)
 
- nproc = l_mpi_enreg%nproc
- call xmpi_comm_free(l_mpi_enreg%comm_world)
+ if(dtset%paral_kgb/=0)then
+   nproc = l_mpi_enreg%nproc
+   call xmpi_comm_free(l_mpi_enreg%comm_world)
 
- do bandpp = 1,mband
-   if(mod(mband,bandpp) /= 0) cycle
-   npband = mband/bandpp
-   if(npband <= nproc) exit
- enddo
- dtset%npband = npband
- dtset%bandpp = bandpp
- dtset%npkpt = 1
- dtset%npfft = 1
- dtset%npspinor = 1
+   do bandpp = 1,mband
+     if(mod(mband,bandpp) /= 0) cycle
+     npband = mband/bandpp
+     if(npband <= nproc) exit
+   enddo
+   write(std_out,*) 'npband=',npband
+   write(std_out,*) 'bandpp=',bandpp
+   dtset%npband = npband
+   dtset%bandpp = bandpp
+   dtset%npkpt = 1
+   dtset%npfft = 1
+   dtset%npspinor = 1
 
- ABI_ALLOCATE(ranks,(npband))
- ranks = (/((irank-1),irank=1,npband)/)
- l_mpi_enreg%comm_world = xmpi_subcomm(xmpi_world,npband,ranks)
- l_mpi_enreg%me = xmpi_comm_rank(l_mpi_enreg%comm_world)
- l_mpi_enreg%nproc = xmpi_comm_size(l_mpi_enreg%comm_world)
-
+   ABI_ALLOCATE(ranks,(npband))
+   ranks = (/((irank-1),irank=1,npband)/)
+   l_mpi_enreg%comm_world = xmpi_subcomm(xmpi_world,npband,ranks)
+   l_mpi_enreg%me = xmpi_comm_rank(l_mpi_enreg%comm_world)
+   l_mpi_enreg%nproc = xmpi_comm_size(l_mpi_enreg%comm_world)
+ endif
 
  l_mpi_enreg%pw_unbal_thresh=dtset%pw_unbal_thresh
 

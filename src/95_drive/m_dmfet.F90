@@ -592,11 +592,11 @@ subroutine dmfet_core(this,rprim,codvsn)
  this%dtset%nband(:) = this%dim_all 
 !end modify dtset
 
- call init_local_mpi_enreg(l_mpi_enreg,this%dtset,this%dtset%mband,this%dtset%nband)
+ !call init_local_mpi_enreg(l_mpi_enreg,this%dtset,this%dtset%mband,this%dtset%nband)
 
  bstruct = ebands_from_dtset(this%dtset, this%npwarr)
  call hdr_init(bstruct,codvsn,this%dtset,hdr,this%pawtab,0,this%psps,this%wvl%descr,&
-& comm_atom=l_mpi_enreg%comm_atom,mpi_atmtab=l_mpi_enreg%my_atmtab)
+& comm_atom=this%mpi_enreg%comm_atom,mpi_atmtab=this%mpi_enreg%my_atmtab)
  call ebands_free(bstruct)
 
  ABI_ALLOCATE(dens_tot,(dim_sub,dim_sub))
@@ -604,7 +604,7 @@ subroutine dmfet_core(this,rprim,codvsn)
 
  !total scf calc in subspace
  call init_results_gs(this%dtset%natom,this%dtset%nsppol,res_tot)
- call gstate_sub(this%acell,this%dtset,this%psps,rprim,res_tot,l_mpi_enreg,this%dtfil,this%wvl,&
+ call gstate_sub(this%acell,this%dtset,this%psps,rprim,res_tot,this%mpi_enreg,this%dtfil,this%wvl,&
 & this%cg,this%pawtab,this%pawrad,this%pawang,this%crystal%xred,&
 & dens_tot,this%can2sub,this%n_canonical,dim_sub,this%dim_all,this%sub_occ(1:this%dim_all),&
 & hdr=hdr) 
