@@ -582,7 +582,7 @@ subroutine dmfet_core(this,rprim,codvsn)
  real(dp),allocatable :: dens_tot(:,:),emb_pot(:,:)
 
 !local MPI
- type(MPI_type) :: l_mpi_enreg
+! type(MPI_type) :: l_mpi_enreg
 
 
  dim_sub = this%dim_all !use all of sub orbitals for now
@@ -592,7 +592,7 @@ subroutine dmfet_core(this,rprim,codvsn)
  this%dtset%nband(:) = this%dim_all 
 !end modify dtset
 
- !call init_local_mpi_enreg(l_mpi_enreg,this%dtset,this%dtset%mband,this%dtset%nband)
+! call init_local_mpi_enreg(l_mpi_enreg,this%dtset,this%dtset%mband,this%dtset%nband)
 
  bstruct = ebands_from_dtset(this%dtset, this%npwarr)
  call hdr_init(bstruct,codvsn,this%dtset,hdr,this%pawtab,0,this%psps,this%wvl%descr,&
@@ -610,7 +610,6 @@ subroutine dmfet_core(this,rprim,codvsn)
 & hdr=hdr) 
 
  stop
-
 
  nsubsys = this%dtset%nsubsys
  ABI_DATATYPE_ALLOCATE(sub_dtsets,(nsubsys))

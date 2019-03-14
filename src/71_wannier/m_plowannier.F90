@@ -733,7 +733,7 @@ subroutine compute_coeff_plowannier(cryst_struc,cprj,dimcprj,dtset,eigen,fermie,
 !scalars
 
  type(plowannier_type),intent(inout) :: wan
- integer,intent(in) :: unpaw,usecprj
+ integer,intent(in) :: unpaw,usecprj,mcprj
  real(dp),intent(in) :: fermie
  type(MPI_type),intent(in) :: mpi_enreg
  type(dataset_type),intent(in) :: dtset
@@ -1030,7 +1030,7 @@ subroutine compute_coeff_plowannier(cryst_struc,cprj,dimcprj,dtset,eigen,fermie,
        if (dtset%paral_kgb==1) then
          if (mod((iband-1)/mpi_enreg%bandpp,mpi_enreg%nproc_band)/=mpi_enreg%me_band) cycle
        else
-         if (mpi_enreg%proc_distrb(ikpt,ibandc,isppol)/=me) cycle
+         if (mpi_enreg%proc_distrb(ikpt,iband,isppol)/=me) cycle
        end if
        do ispinor=1,wan%nspinor
          do iatom = 1,wan%natom_wan !loop over the atom chosen

@@ -32,6 +32,7 @@ module m_dmfet_driver
  use m_errors
  use m_xmpi
  use m_bandfft_kpt
+ use m_wffile
 
  use m_symtk,            only : matr3inv
  use m_common,           only : setup1
@@ -43,10 +44,13 @@ module m_dmfet_driver
  use m_pawrad,           only : pawrad_type
  use m_pawtab,           only : pawtab_type
  use m_pawfgr,           only : pawfgr_type, pawfgr_init, pawfgr_destroy
+ use m_pawrhoij,         only : pawrhoij_nullify
+ use m_paw_occupancies,  only : initrhoij
  use m_initylmg,         only : initylmg
  use m_pspini,           only : pspini
  use m_wfk,              only : wfk_t,wfk_read_eigenvalues,wfk_open_read,wfk_read_band_block
  use m_io_tools,         only : iomode_from_fname,get_unit
+ use m_inwffil,          only : inwffil
 
  implicit none
 
@@ -108,16 +112,18 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
  type(crystal_t) :: crystal
  type(pawfgr_type) :: pawfgr
 
-! type(hdr_type) :: hdr
+ type(hdr_type) :: hdr
  type(hdr_type) :: hdr_wfk
-! type(ebands_t) :: bstruct 
+ type(ebands_t) :: bstruct 
  type(dmfet_type) :: dmfet_args
 
  character(len=500) :: message
+ integer :: my_natom,natom
  integer :: ibtot,isppol,ikibz,ib
  integer :: timrev,option,ierr,comm
  integer :: bantot,mcg,mgfftf,nfftf,my_nspinor,comm_psp,psp_gencond
  integer,parameter :: response=0
+ integer :: ask_accurate,gscase,ireadwf0,optorth
  logical :: remove_inv
  real(dp) :: ecut_eff,ecutdg_eff
  real(dp) :: gsqcut_eff,gsqcutc_eff,ucvol
@@ -131,6 +137,7 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
  real(dp) :: rmet(3,3),rprimd(3,3)
  real(dp),allocatable :: ylm(:,:),ylmgr(:,:,:)
  real(dp),allocatable :: cg(:,:)
+ type(pawrhoij_type),allocatable :: pawrhoij(:)
 
  character(len=fnlen) :: wfk_fname
  real(dp),pointer :: energies_p(:,:,:)
@@ -141,16 +148,18 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
  integer :: band_block(2)
  integer :: iomode, funt
  integer,parameter :: master=0,formeig0=0
+ type(wffile_type) :: wffgs,wfftgs
 
 !================================================
 !The following shouldn't change during DMFET calc
 !================================================
 
+ natom = dtset%natom
  call pawfgr_init(pawfgr,dtset,mgfftf,nfftf,ecut_eff,ecutdg_eff,ngfft,ngfftf)
 
  call setup1(acell,bantot,dtset,&
 & ecutdg_eff,ecut_eff,gmet,gprimd,gsqcut_eff,gsqcutc_eff,&
-& dtset%natom,ngfftf,ngfft,dtset%nkpt,dtset%nsppol,&
+& natom,ngfftf,ngfft,dtset%nkpt,dtset%nsppol,&
 & response,rmet,rprim,rprimd,ucvol,psps%usepaw)
 
 
@@ -185,6 +194,16 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
 & pawrad,pawtab,psps,rprimd,comm_mpi=comm_psp)
 ! if(psp_gencond==1) write(std_out,*) "psp has been recomputed!"
 
+ ABI_ALLOCATE(occ,(dtset%mband*dtset%nkpt*dtset%nsppol))
+ occ(:)=zero
+ ABI_ALLOCATE(eigen,(dtset%mband*dtset%nkpt*dtset%nsppol))
+ eigen(:)=zero
+
+ mcg=dtset%mpw*dtset%nspinor*dtset%mband*dtset%mkmem*dtset%nsppol
+ ABI_STAT_ALLOCATE(cg,(2,mcg), ierr)
+ ABI_CHECK(ierr==0, "out-of-memory in cg")
+
+
 !========================================
 !read wavefunction from previous DFT calc
 !========================================
@@ -200,12 +219,13 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
  call crystal_from_hdr(crystal,hdr_wfk,timrev,remove_inv)
  call crystal_print(crystal)
 
+#if 0
 
 !FIXME
 !gamma point only currently
- ABI_ALLOCATE(eigen,(dtset%mband))
- ABI_ALLOCATE(occ,(dtset%mband))
- eigen(:)=zero; occ(:)=zero
+! ABI_ALLOCATE(eigen,(dtset%mband))
+! ABI_ALLOCATE(occ,(dtset%mband))
+! eigen(:)=zero; occ(:)=zero
 
  ibtot=0
  do isppol=1,dtset%nsppol
@@ -221,14 +241,14 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
 
  e_fermie = hdr_wfk%fermie
 
- my_nspinor=max(1,dtset%nspinor/mpi_enreg%nproc_spinor)
- mcg=dtset%mpw*my_nspinor*dtset%mband*dtset%mkmem*dtset%nsppol
+! my_nspinor=max(1,dtset%nspinor/mpi_enreg%nproc_spinor)
+! mcg=dtset%mpw*my_nspinor*dtset%mband*dtset%mkmem*dtset%nsppol
 
- ABI_STAT_ALLOCATE(cg,(2,mcg), ierr)
- if(ierr/=0) then
-   write(message,"(A)") 'out of memory in cg'
-   MSG_ERROR(message)
- endif
+! ABI_STAT_ALLOCATE(cg,(2,mcg), ierr)
+! if(ierr/=0) then
+!   write(message,"(A)") 'out of memory in cg'
+!   MSG_ERROR(message)
+! endif
 
  iomode = iomode_from_fname(wfk_fname)
  funt = get_unit()
@@ -242,6 +262,56 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
 !========================================
 !finished reading
 !========================================
+#endif
+
+#if 0
+ bstruct = ebands_from_dtset(dtset, npwarr)
+
+ my_natom=mpi_enreg%my_natom
+ if (psps%usepaw==1) then
+   ABI_DATATYPE_ALLOCATE(pawrhoij,(my_natom))
+   call pawrhoij_nullify(pawrhoij)
+   call initrhoij(dtset%pawcpxocc,dtset%lexexch,dtset%lpawu, &
+&   my_natom,natom,dtset%nspden,dtset%nspinor,dtset%nsppol,dtset%ntypat,&
+&   pawrhoij,dtset%pawspnorb,pawtab,dtset%spinat,dtset%typat,&
+&   comm_atom=mpi_enreg%comm_atom, mpi_atmtab=mpi_enreg%my_atmtab)
+ else
+   ABI_DATATYPE_ALLOCATE(pawrhoij,(0))
+ end if
+
+
+ gscase=0
+ call hdr_init(bstruct,codvsn,dtset,hdr,pawtab,gscase,psps,wvl%descr, &
+& comm_atom=mpi_enreg%comm_atom, mpi_atmtab=mpi_enreg%my_atmtab)
+
+
+
+!If parallelism over atom, hdr is distributed
+ call hdr_update(hdr,bantot,hdr%etot,hdr%fermie,&
+& hdr%residm,rprimd,occ,pawrhoij,xred,dtset%amu_orig(:,1), &
+& comm_atom=mpi_enreg%comm_atom, mpi_atmtab=mpi_enreg%my_atmtab)
+
+ call ebands_free(bstruct)
+#endif
+
+!new read cg
+! call status(0,dtfil%filstat,iexit,level,'call inwffil(1')
+ ireadwf0=1; ask_accurate=1; optorth=0
+
+ call inwffil(ask_accurate,cg,dtset,dtset%ecut,ecut_eff,eigen,dtset%exchn2n3d,&
+& formeig0,hdr_wfk,ireadwf0,dtset%istwfk,kg,dtset%kptns,&
+& dtset%localrdwf,dtset%mband,mcg,dtset%mkmem,mpi_enreg,dtset%mpw,&
+& dtset%nband,ngfft,dtset%nkpt,npwarr,dtset%nsppol,dtset%nsym,&
+& occ,optorth,dtset%symafm,dtset%symrel,dtset%tnons,&
+& dtfil%unkg,wffgs,wfftgs,dtfil%unwffgs,dtfil%fnamewffk,wvl)
+
+!Close wffgs, if it was ever opened (in inwffil)
+ if (ireadwf0==1) then
+   call WffClose(wffgs,ierr)
+ end if
+
+!end read cg
+
 
  call dmfet_init(dmfet_args,acell,crystal,dtfil,dtset,psps,mpi_enreg,&
 & kg,nfftf,pawfgr,pawtab,pawrad,pawang,npwarr,ylm,ylmgr,mcg,cg,eigen,occ,e_fermie,ecore,wvl)

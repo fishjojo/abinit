@@ -181,7 +181,7 @@ subroutine mpi_setup(dtsets,filnam,lenstr,mpi_enregs,ndtset,ndtset_alloc,string)
      MSG_WARNING(message)
    end if
 
-   if ( ALL(optdriver /= [RUNL_GSTATE, RUNL_GWLS]) .and. dtsets(idtset)%paral_kgb/=0) then
+   if ( ALL(optdriver /= [RUNL_GSTATE, RUNL_GWLS, RUNL_DMFET]) .and. dtsets(idtset)%paral_kgb/=0) then
      dtsets(idtset)%paral_kgb=0
      write(message, '(a,i0,a)') &
 &     "paral_kgb != 0 is not available in optdriver ",optdriver,". Setting paral_kgb to 0"
@@ -258,7 +258,7 @@ subroutine mpi_setup(dtsets,filnam,lenstr,mpi_enregs,ndtset,ndtset_alloc,string)
    call finddistrproc(dtsets,filnam,idtset,iexit,mband_upper,mpi_enregs(idtset),ndtset_alloc,tread)
    if (any(optdriver == [RUNL_SCREENING, RUNL_SIGMA, RUNL_BSE, RUNL_EPH, RUNL_NONLINEAR])) iexit = 0
 
-   if ((optdriver/=RUNL_GSTATE.and.optdriver/=RUNL_GWLS).and. &
+   if ((optdriver/=RUNL_GSTATE.and.optdriver/=RUNL_GWLS.and.optdriver/=RUNL_DMFET).and. &
 &   (dtsets(idtset)%npkpt/=1   .or.dtsets(idtset)%npband/=1.or.dtsets(idtset)%npfft/=1.or. &
 &   dtsets(idtset)%npspinor/=1.or.dtsets(idtset)%bandpp/=1)) then
 !&   .or.(dtsets(idtset)%iscf<0)) then

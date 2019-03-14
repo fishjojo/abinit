@@ -664,12 +664,21 @@ module m_xg
     type(xg_t), intent(inout) :: xg
     complex(kind=8), intent(out) :: array(:,:)
     double precision :: tsec(2)
+    integer :: rows,cols
 
     call timab(tim_get,1,tsec)
 
     select case (xg%space)
+    case (SPACE_R)
+      MSG_ERROR("wrong space")
+    case (SPACE_CR)
+      MSG_ERROR("wrong space")
     case (SPACE_C)
-      call zcopy(xg%rows*xg%cols,xg%vecC,1,array,1)
+      do cols=1,xg%cols
+        do rows=1,xg%rows
+          array(rows,cols) = xg%vecC(rows,cols)
+        enddo
+      enddo
     end select
 
     call timab(tim_get,2,tsec)
