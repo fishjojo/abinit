@@ -219,7 +219,6 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
  call crystal_from_hdr(crystal,hdr_wfk,timrev,remove_inv)
  call crystal_print(crystal)
 
-#if 0
 
 !FIXME
 !gamma point only currently
@@ -262,7 +261,6 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
 !========================================
 !finished reading
 !========================================
-#endif
 
 #if 0
  bstruct = ebands_from_dtset(dtset, npwarr)
@@ -292,7 +290,6 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
 & comm_atom=mpi_enreg%comm_atom, mpi_atmtab=mpi_enreg%my_atmtab)
 
  call ebands_free(bstruct)
-#endif
 
 !new read cg
 ! call status(0,dtfil%filstat,iexit,level,'call inwffil(1')
@@ -311,7 +308,7 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
  end if
 
 !end read cg
-
+#endif
 
  call dmfet_init(dmfet_args,acell,crystal,dtfil,dtset,psps,mpi_enreg,&
 & kg,nfftf,pawfgr,pawtab,pawrad,pawang,npwarr,ylm,ylmgr,mcg,cg,eigen,occ,e_fermie,ecore,wvl)

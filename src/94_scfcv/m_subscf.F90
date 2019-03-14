@@ -1493,11 +1493,11 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
 
      npw_k=this%npwarr(ikpt)
 
-     if(proc_distrb_cycle(mpi_enreg%proc_distrb,ikpt,1,dim_sub,isppol,me_distrb)) then
+!     if(proc_distrb_cycle(mpi_enreg%proc_distrb,ikpt,1,dim_sub,isppol,me_distrb)) then
 !       eigen(1+bdtot_index : nband_k+bdtot_index) = zero
 !       bdtot_index=bdtot_index+nband_k
-       cycle
-     end if
+!       cycle
+!     end if
 
      if (mpi_enreg%paral_kgb==1) my_bandfft_kpt => bandfft_kpt(my_ikpt)
      call bandfft_kpt_set_ikpt(ikpt,mpi_enreg)
@@ -1815,32 +1815,32 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,ikpt,my_nspinor,subham_sub,
 
  npw_k=this%npwarr(ikpt)
 
-! ABI_ALLOCATE(subham,(nband_k*(nband_k+1)))
-! subham(:) = zero
- call wftosubham(subham_sub,gs_hamk,mpi_enreg,cg,mcg,icg,nband_k,dtset%nbdblock,npw_k,my_nspinor,dtset%prtvol)
+ ABI_ALLOCATE(subham,(nband_k*(nband_k+1)))
+ subham(:) = zero
+ call wftosubham(subham,gs_hamk,mpi_enreg,cg,mcg,icg,nband_k,dtset%nbdblock,npw_k,my_nspinor,dtset%prtvol)
 
 
-! isubh = 1
-! do iband1=1,nband_k
-!   do iband2=1,iband1
-!     if(iband2/=iband1)then
-!       subham_sub(iband2,iband1)=cmplx(subham(isubh),subham(isubh+1),kind=dp)
-!       subham_sub(iband1,iband2)=cmplx(subham(isubh),-subham(isubh+1),kind=dp)
-!     else
-!       if(abs(subham(isubh+1))>tol8) MSG_ERROR('Hamiltonian is not Hermitian!') 
-!       subham_sub(iband2,iband1)=cmplx(subham(isubh),kind=dp) 
-!     endif
-!     isubh=isubh+2
-!   enddo
-! enddo
-
+ isubh = 1
  do iband1=1,nband_k
    do iband2=1,iband1
-     if(abs(subham_sub(iband2,iband1)-conjg(subham_sub(iband1,iband2)))>tol8 ) then
-       MSG_ERROR('Hamiltonian is not Hermitian!')
+     if(iband2/=iband1)then
+       subham_sub(iband2,iband1)=cmplx(subham(isubh),subham(isubh+1),kind=dp)
+       subham_sub(iband1,iband2)=cmplx(subham(isubh),-subham(isubh+1),kind=dp)
+     else
+       if(abs(subham(isubh+1))>tol8) MSG_ERROR('Hamiltonian is not Hermitian!') 
+       subham_sub(iband2,iband1)=cmplx(subham(isubh),kind=dp) 
      endif
+     isubh=isubh+2
    enddo
  enddo
+
+! do iband1=1,nband_k
+!   do iband2=1,iband1
+!     if(abs(subham_sub(iband2,iband1)-conjg(subham_sub(iband1,iband2)))>tol8 ) then
+!       MSG_ERROR('Hamiltonian is not Hermitian!')
+!     endif
+!   enddo
+! enddo
 
  if(this%has_embpot) then
    do iband1=1,nband_k
@@ -1861,7 +1861,7 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,ikpt,my_nspinor,subham_sub,
    write(std_out,'(f20.12)') eig_sub(iband1)
  enddo
 
-! ABI_DEALLOCATE(subham)
+ ABI_DEALLOCATE(subham)
  ABI_DEALLOCATE(rwork)
  ABI_DEALLOCATE(zwork)
 
@@ -1907,8 +1907,8 @@ subroutine wftosubham(subham,gs_hamk,mpi_enreg,cg,mcg,icg,nband,nbdblock,npw,nsp
  integer,intent(in) :: npw,nband,nbdblock,nspinor,prtvol
 
  real(dp),intent(inout) :: cg(2,mcg)
-! real(dp),intent(out) :: subham(nband*(nband+1))
- complex(dpc),intent(out) :: subham(nband,nband)
+ real(dp),intent(out) :: subham(nband*(nband+1))
+! complex(dpc),intent(out) :: subham(nband,nband)
 
 !local variables
  integer,parameter :: cpopt=-1, tim_getghc=1, use_vnl=0, use_subovl=0, igsc=0
@@ -1923,13 +1923,13 @@ subroutine wftosubham(subham,gs_hamk,mpi_enreg,cg,mcg,icg,nband,nbdblock,npw,nsp
 
  type(pawcprj_type) :: cprj_dum(1,1)
 
- type(xg_t) :: subsub
- type(xgBlock_t) :: X
- type(xgBlock_t) :: AX
+! type(xg_t) :: subsub
+! type(xgBlock_t) :: X
+! type(xgBlock_t) :: AX
 
-! ABI_ALLOCATE(ghc,(2,npw*nspinor))
-! ABI_ALLOCATE(gvnlc,(2,npw*nspinor))
-! ABI_ALLOCATE(cwavef,(2,npw*nspinor))
+ ABI_ALLOCATE(ghc,(2,npw*nspinor))
+ ABI_ALLOCATE(gvnlc,(2,npw*nspinor))
+ ABI_ALLOCATE(cwavef,(2,npw*nspinor))
 
  istwf_k=gs_hamk%istwf_k
 
@@ -1937,79 +1937,69 @@ subroutine wftosubham(subham,gs_hamk,mpi_enreg,cg,mcg,icg,nband,nbdblock,npw,nsp
 
  sij_opt = 0
 
- spacedim = npw*nspinor
- blockdim=mpi_enreg%nproc_band*mpi_enreg%bandpp 
- ABI_ALLOCATE(ghc,(2,spacedim*nband))
- ABI_ALLOCATE(gvnlc,(2,spacedim*blockdim))
+! spacedim = npw*nspinor
+! blockdim=mpi_enreg%nproc_band*mpi_enreg%bandpp 
+! blockdim=1
+! ABI_ALLOCATE(ghc,(2,spacedim*nband))
+! ABI_ALLOCATE(ghc,(2,spacedim*blockdim))
+! ABI_ALLOCATE(gvnlc,(2,spacedim*blockdim))
 
- write(std_out,*) 'blockdim=',blockdim
- write(std_out,*) 'nband=',nband
+! write(std_out,*) 'blockdim=',blockdim
+! write(std_out,*) 'nband=',nband
 
-! nblock=(nband-1)/nbdblock+1
- nblock = nband/blockdim
+ nblock=(nband-1)/nbdblock+1
+! nblock = nband/blockdim
  ! Loop over blocks of bands. In the standard band-sequential algorithm, nblock=nband.
- ioff = 0
+! ioff = 0
  do iblock=1,nblock
 
    ! Loop over bands in a block
    ! This loop can be MPI-parallelized, over processors attached to the same k point
-!   ibandmin=1+(iblock-1)*nbdblock
-!   ibandmax=min(iblock*nbdblock,nband)
+   ibandmin=1+(iblock-1)*nbdblock
+   ibandmax=min(iblock*nbdblock,nband)
 
-   if (mpi_enreg%paral_kgb==0) then
-     call multithreaded_getghc(cpopt,cg(:,1+ioff:blockdim*spacedim+ioff),cprj_dum,&
-&     ghc(:,1+ioff:blockdim*spacedim+ioff),gsc_dummy,gs_hamk,gvnlc,lambda_dum,mpi_enreg,blockdim,prtvol,sij_opt,tim_getghc,0)
-
-!     call getghc(cpopt,cg(:,1+ioff:blockdim*spacedim+ioff),cprj_dum,ghc,gsc_dummy,gs_hamk,gvnlc,&
-!&     eval,mpi_enreg,1,prtvol,sij_opt,tim_getghc,0)
-
-!     call mksubham(cg,ghc(:,1+ioff:blockdim*spacedim+ioff),gsc_dummy,gvnlc,iblock,icg,igsc,istwf_k,&
-!&     isubh,isubo,mcg,mgsc,nband,nbdblock,npw,&
-!&     nspinor,subham,subovl_dummy,subvnl_dummy,use_subovl,use_vnl,mpi_enreg%me_g0)
-   else
-     call prep_getghc(cg(:,1+ioff:blockdim*spacedim+ioff),gs_hamk,gvnlc,&
-&     ghc(:,1+ioff:blockdim*spacedim+ioff),gsc_dummy,lambda_dum,blockdim,&
-&     mpi_enreg,prtvol,sij_opt,cpopt,cprj_dum,already_transposed=.false.)
-   endif
+!   if (mpi_enreg%paral_kgb==0) then
+!     call multithreaded_getghc(cpopt,cg(:,1+ioff:blockdim*spacedim+ioff),cprj_dum,&
+!&     ghc(:,1+ioff:blockdim*spacedim+ioff),gsc_dummy,gs_hamk,gvnlc,lambda_dum,mpi_enreg,blockdim,prtvol,sij_opt,tim_getghc,0)
+!   else
+!     call prep_getghc(cg(:,1+ioff:blockdim*spacedim+ioff),gs_hamk,gvnlc,&
+!&     ghc(:,1+ioff:blockdim*spacedim+ioff),gsc_dummy,lambda_dum,blockdim,&
+!&     mpi_enreg,prtvol,sij_opt,cpopt,cprj_dum,already_transposed=.false.)
+!   endif
 
    ! Big iband loop
-!   do iband=ibandmin,ibandmax
-!     icg_shift=npw*nspinor*(iband-1)+icg
+   do iband=ibandmin,ibandmax
+     icg_shift=npw*nspinor*(iband-1)+icg
 
-!     call cg_zcopy(npw*nspinor,cg(1,1+icg_shift),cwavef)
+     call cg_zcopy(npw*nspinor,cg(1,1+icg_shift),cwavef)
 
 !    By setting ieigen to iband, Fock contrib. of this iband to the energy will be calculated
-!     call fock_set_ieigen(gs_hamk%fockcommon,iband)
+     call fock_set_ieigen(gs_hamk%fockcommon,iband)
 
-!     call getghc(cpopt,cwavef,cprj_dum,ghc,gsc_dummy,gs_hamk,gvnlc,&
-!&     eval,mpi_enreg,1,prtvol,sij_opt,tim_getghc,0)
+     call getghc(cpopt,cwavef,cprj_dum,ghc,gsc_dummy,gs_hamk,gvnlc,&
+&     eval,mpi_enreg,1,prtvol,sij_opt,tim_getghc,0)
 
-!   enddo
+   enddo
 
-!   call mksubham(cg,ghc,gsc_dummy,gvnlc,iblock,icg,igsc,istwf_k,&
-!&   isubh,isubo,mcg,mgsc,nband,nbdblock,npw,&
-!&   nspinor,subham,subovl_dummy,subvnl_dummy,use_subovl,use_vnl,mpi_enreg%me_g0)
+   call mksubham(cg,ghc,gsc_dummy,gvnlc,iblock,icg,igsc,istwf_k,&
+&   isubh,isubo,mcg,mgsc,nband,nbdblock,npw,&
+&   nspinor,subham,subovl_dummy,subvnl_dummy,use_subovl,use_vnl,mpi_enreg%me_g0)
 
-   ioff = ioff + blockdim*spacedim
+!   ioff = ioff + blockdim*spacedim
  enddo
 
  ABI_DEALLOCATE(gvnlc)
 
- call xg_init(subsub,SPACE_C,nband,nband) 
- call xgBlock_map(X,cg,SPACE_C,spacedim,nband)
- call xgBlock_map(AX,ghc,SPACE_C,spacedim,nband)
- call xgBlock_gemm(X%trans,AX%normal,1.0d0,X,AX,0.d0,subsub%self)
+! call xg_init(subsub,SPACE_C,nband,nband) 
+! call xgBlock_map(X,cg,SPACE_C,spacedim,nband)
+! call xgBlock_map(AX,ghc,SPACE_C,spacedim,nband)
+! call xgBlock_gemm(X%trans,AX%normal,1.0d0,X,AX,0.d0,subsub%self)
 
- call xg_get_cmplx_array(subsub,subham)
- call xg_free(subsub)
+! call xg_get_cmplx_array(subsub,subham)
+! call xg_free(subsub)
 
  ABI_DEALLOCATE(ghc)
-! ABI_DEALLOCATE(cwavef)
-
-
-! do ii=1,nband
-!   write(std_out,*) subham(ii,:)
-! enddo
+ ABI_DEALLOCATE(cwavef)
 
 end subroutine wftosubham
 

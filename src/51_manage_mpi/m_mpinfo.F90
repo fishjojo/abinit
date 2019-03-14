@@ -1466,7 +1466,6 @@ subroutine initmpi_grid(mpi_enreg)
    write(msg,'(a,4i5)') 'me_fft, me_band, me_spinor , me_kpt: ',&
 &   mpi_enreg%me_fft,mpi_enreg%me_band,&
 &   mpi_enreg%me_spinor, mpi_enreg%me_kpt
-   call wrtout(std_out,msg,'PERS')
 
  else ! paral_hf==1
 !* Option Hartree-Fock is active and more than 1 processor is dedicated to the parallelization over occupied states.

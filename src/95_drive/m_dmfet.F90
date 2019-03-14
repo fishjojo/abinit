@@ -585,7 +585,7 @@ subroutine dmfet_core(this,rprim,codvsn)
 ! type(MPI_type) :: l_mpi_enreg
 
 
- dim_sub = this%dim_all !use all of sub orbitals for now
+ dim_sub = this%dim_sub
 
 !modify dtset for subspace scf calculation
  this%dtset%mband = this%dim_all
@@ -608,8 +608,6 @@ subroutine dmfet_core(this,rprim,codvsn)
 & this%cg,this%pawtab,this%pawrad,this%pawang,this%crystal%xred,&
 & dens_tot,this%can2sub,this%n_canonical,dim_sub,this%dim_all,this%sub_occ(1:this%dim_all),&
 & hdr=hdr) 
-
- stop
 
  nsubsys = this%dtset%nsubsys
  ABI_DATATYPE_ALLOCATE(sub_dtsets,(nsubsys))
