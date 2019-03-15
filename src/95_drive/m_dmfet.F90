@@ -780,7 +780,7 @@ subroutine build_subsys(dtset,sub_dtsets,nsubsys)
 
    call dtset_chkneu(dtset%charge,sub_dtsets(i),dtset%occopt)
 
-   write(message,'(2a,i0,a,i0)') ch10,"No. of electrons in subsysetem ",i,": ",sub_dtsets(i)%nelect
+   write(message,'(2a,i0,a,f10.6)') ch10,"No. of electrons in subsysetem ",i,": ",sub_dtsets(i)%nelect
    call wrtout(std_out,message,'COLL')
 
    ioff = ioff + sub_natom

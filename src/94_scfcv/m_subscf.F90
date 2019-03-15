@@ -1106,7 +1106,6 @@ subroutine subscf_core(this,dtset,crystal,psps,pawtab,pawrad,pawang,pawfgr,mpi_e
      call wrtout(std_out,message,'COLL')
    end if
 
-
    call subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,this%dtfil,istep,compch_fft,&
 &    pawtab,pawfgr,pawfgrtab,pawang,paw_ij,this%pawrhoij,rhog,rhor,nhat,nvresid,optres,res2,tauresid,&
 &    this%kg,this%ylm,this%ylmgr,vtrial,energies,ph1d,fock,my_natom,dtset%natom,psps%ntypat,0,nfftf,&
@@ -1366,7 +1365,7 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  type(paw_dmft_type),intent(inout) :: paw_dmft
  type(wvl_data), intent(inout) :: wvl
 
- integer :: mcg_sub,mcg_new
+ integer :: mcg_sub,mcg_new,ierr
  integer :: usecprj_local,istwf_k,cplex,ipert
  integer :: isppol,ikg,ilm,nkpg,dimffnl,ider,idir
  integer :: ikpt_loc,ikpt,nband_k,my_ikpt
@@ -1423,7 +1422,6 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  me_distrb=xmpi_comm_rank(spaceComm_distrb)
  mpi_comm_sphgrid=mpi_enreg%comm_fft
 
-
  usecprj_local=0;if (psps%usepaw==1) usecprj_local=1
 
  iscf = dtset%iscf
@@ -1460,13 +1458,11 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
    end if
  end if
 
-
  call init_hamiltonian(gs_hamk,psps,pawtab,dtset%nspinor,dtset%nsppol,dtset%nspden,natom,&
 & dtset%typat,crystal%xred,dtset%nfft,dtset%mgfft,dtset%ngfft,crystal%rprimd,dtset%nloalg,&
 & paw_ij=paw_ij,ph1d=ph1d,usecprj=usecprj_local,electronpositron=this%electronpositron,fock=fock,&
 & comm_atom=mpi_enreg%comm_atom,mpi_atmtab=mpi_enreg%my_atmtab,mpi_spintab=mpi_enreg%my_isppoltab,&
 & nucdipmom=dtset%nucdipmom,use_gpu_cuda=dtset%use_gpu_cuda)
-
 
  ABI_ALLOCATE(vlocal,(n4,n5,n6,gs_hamk%nvloc))
 
@@ -1493,11 +1489,11 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
 
      npw_k=this%npwarr(ikpt)
 
-!     if(proc_distrb_cycle(mpi_enreg%proc_distrb,ikpt,1,dim_sub,isppol,me_distrb)) then
+     if(proc_distrb_cycle(mpi_enreg%proc_distrb,ikpt,1,dim_sub,isppol,me_distrb)) then
 !       eigen(1+bdtot_index : nband_k+bdtot_index) = zero
 !       bdtot_index=bdtot_index+nband_k
-!       cycle
-!     end if
+       cycle
+     end if
 
      if (mpi_enreg%paral_kgb==1) my_bandfft_kpt => bandfft_kpt(my_ikpt)
      call bandfft_kpt_set_ikpt(ikpt,mpi_enreg)
@@ -1587,6 +1583,7 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
      call subscf_mkham(this,dtset,mpi_enreg,gs_hamk,ikpt,my_nspinor,&
 &      this%subham_sub(1:dim_sub,1:dim_sub),this%eig_sub(1:dim_sub),dim_sub,cg_sub,mcg_sub)
 
+
      ABI_DEALLOCATE(cg_sub)
 
      ABI_DEALLOCATE(ffnl)
@@ -1595,7 +1592,7 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
      ABI_DEALLOCATE(ylm_k)
      ABI_DEALLOCATE(ph3d)
 !     ABI_DEALLOCATE(zshift)
-
+     ABI_DEALLOCATE(kinpw)
    enddo
  enddo
 
@@ -1603,6 +1600,11 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
 
  ABI_ALLOCATE(doccde,(dim_sub*dtset%nkpt*dtset%nsppol))
  doccde=zero
+
+ call xmpi_bcast(this%eig_sub,0,mpi_enreg%comm_kpt,ierr)
+ write(std_out,*) 'debug eigen:'
+ write(std_out,*) this%eig_sub
+ call xmpi_bcast(this%subham_sub,0,mpi_enreg%comm_kpt,ierr)
 
 ! call newocc(doccde,this%eig_sub,energies%entropy,energies%e_fermie,dtset%spinmagntarget,&
 !& dtset%mband,dtset%nband,dtset%nelect,dtset%nkpt,dtset%nspinor,&
@@ -1661,6 +1663,8 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  ABI_DEALLOCATE(tmp) 
 !end get cg_new
 
+ ABI_ALLOCATE(kinpw,(npw_k))
+ call mkkin(dtset%ecut,dtset%ecutsm,dtset%effmass_free,gmet,kg,kinpw,kpoint,npw_k,0,0)
  !FIXME
  !compute kinetic energy
  if(iscf>0 .or. iscf==-3)then
@@ -1819,7 +1823,6 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,ikpt,my_nspinor,subham_sub,
  subham(:) = zero
  call wftosubham(subham,gs_hamk,mpi_enreg,cg,mcg,icg,nband_k,dtset%nbdblock,npw_k,my_nspinor,dtset%prtvol)
 
-
  isubh = 1
  do iband1=1,nband_k
    do iband2=1,iband1
@@ -1947,6 +1950,11 @@ subroutine wftosubham(subham,gs_hamk,mpi_enreg,cg,mcg,icg,nband,nbdblock,npw,nsp
 ! write(std_out,*) 'blockdim=',blockdim
 ! write(std_out,*) 'nband=',nband
 
+ print*,'nblock=',nblock
+ print*,'nbdblock=',nbdblock
+ print*,'nband=',nband
+ print*,'me=',xmpi_comm_rank(xmpi_world)
+
  nblock=(nband-1)/nbdblock+1
 ! nblock = nband/blockdim
  ! Loop over blocks of bands. In the standard band-sequential algorithm, nblock=nband.
@@ -1978,7 +1986,6 @@ subroutine wftosubham(subham,gs_hamk,mpi_enreg,cg,mcg,icg,nband,nbdblock,npw,nsp
 
      call getghc(cpopt,cwavef,cprj_dum,ghc,gsc_dummy,gs_hamk,gvnlc,&
 &     eval,mpi_enreg,1,prtvol,sij_opt,tim_getghc,0)
-
    enddo
 
    call mksubham(cg,ghc,gsc_dummy,gvnlc,iblock,icg,igsc,istwf_k,&
