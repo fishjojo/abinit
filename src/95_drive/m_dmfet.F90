@@ -610,6 +610,8 @@ subroutine dmfet_core(this,rprim,codvsn)
 & dens_tot,this%can2sub,this%n_canonical,dim_sub,this%dim_all,this%sub_occ(1:this%dim_all),&
 & hdr=hdr) 
 
+ call print_can2sub(this,this%dtset,this%dtfil,hdr,this%mpi_enreg)
+
  nsubsys = this%dtset%nsubsys
  ABI_DATATYPE_ALLOCATE(sub_dtsets,(nsubsys))
  call build_subsys(this%dtset,sub_dtsets,nsubsys)

@@ -348,7 +348,7 @@ if ( opts.run_clean ):
 (m4_ret, m4_version) = getstatusoutput("m4 --version | sed 's/o/ /g' ")
 (ac_ret, ac_version) = getstatusoutput("autoconf --version")
 (am_ret, am_version) = getstatusoutput("automake --version")
-(lt_ret, lt_version) = getstatusoutput("glibtool  --version")
+(lt_ret, lt_version) = getstatusoutput("libtool  --version")
 
 # Extract and process version numbers
 if ( m4_ret == 0 ):

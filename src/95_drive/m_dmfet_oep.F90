@@ -27,6 +27,7 @@ module m_dmfet_oep
  use defs_datatypes
  use defs_abitypes
  use m_abicore
+ use m_errors
 
  use m_crystal,          only : crystal_t
  use m_gstate_sub
@@ -123,7 +124,7 @@ subroutine oep_run(this,wtol,max_cycle)
 
  integer*8 opt  !pointer to the opt object
  integer algorithm, n, ires
- integer i,j,k,dim_sub
+ integer i,j,k,dim_sub,maxeval
 
  real(dp) :: minf, tol
  real(dp),allocatable :: x(:)
@@ -139,11 +140,19 @@ subroutine oep_run(this,wtol,max_cycle)
  call nlo_create(opt, algorithm, n)
 
  tol = 10.0_dp**(-wtol)
- call nlo_set_ftol_abs(ires, opt, tol)
+ call nlo_set_ftol_rel(ires, opt, tol)
+ call nlo_get_ftol_rel(tol, opt)
+ write(std_out,*) 'debug: tol=',tol
+
  call nlo_set_maxeval(ires, opt, max_cycle)
+ call nlo_get_maxeval(maxeval, opt)
+ write(std_out,*) 'debug: maxeval',maxeval
+
  call nlo_set_min_objective(ires, opt, cost_wuyang, this)
 
  call nlo_optimize(ires, opt, x, minf)
+
+ if(ires<0) MSG_WARNING('nlopt failed')
 
  call nlo_destroy(opt)
 
