@@ -577,6 +577,7 @@ subroutine dmfet_core(this,rprim,codvsn)
  integer :: nsubsys
  integer :: opt_algorithm = 0
  integer :: dim_sub,i,j
+ integer :: me,master
 
 !arrays
  real(dp),allocatable :: dens_tot(:,:),emb_pot(:,:)
@@ -627,12 +628,10 @@ subroutine dmfet_core(this,rprim,codvsn)
  call oep_init(oep_args,scf_inp,dens_tot,dens_sub,emb_pot,opt_algorithm,sub_dtsets,nsubsys)
  call oep_run(oep_args,this%dtset%vemb_opt_w_tol,this%dtset%vemb_opt_cycle)
 
-
 ! call print_vemb(this,this%dtset,hdr,this%dtfil,this%crystal,this%mpi_enreg,this%pawfgr,this%kg,this%npwarr,&
 !& this%cg,this%mcg,oep_args%V_emb,this%can2sub,this%n_canonical,dim_sub,this%crystal%ucvol)
 
  call destroy_oep(oep_args)
-
 
 !clean memory
  do i=1,nsubsys

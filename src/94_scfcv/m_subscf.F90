@@ -1602,8 +1602,8 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  doccde=zero
 
  call xmpi_bcast(this%eig_sub,0,mpi_enreg%comm_kpt,ierr)
- write(std_out,*) 'debug eigen:'
- write(std_out,*) this%eig_sub
+! write(std_out,*) 'debug eigen:'
+! write(std_out,*) this%eig_sub
  call xmpi_bcast(this%subham_sub,0,mpi_enreg%comm_kpt,ierr)
 
 ! call newocc(doccde,this%eig_sub,energies%entropy,energies%e_fermie,dtset%spinmagntarget,&
