@@ -124,6 +124,7 @@ module m_scfcv_core
 
  public :: scfcv_core
  public :: etotfor !Xing
+ public :: wf_mixing !Xing
 !!***
 
 contains

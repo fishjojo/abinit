@@ -33,6 +33,7 @@ module m_dmfet_driver
  use m_xmpi
  use m_bandfft_kpt
  use m_wffile
+ use libxc_functionals
 
  use m_symtk,            only : matr3inv
  use m_common,           only : setup1
@@ -40,6 +41,7 @@ module m_dmfet_driver
  use m_crystal,          only : crystal_t, crystal_free, crystal_print
  use m_crystal_io,       only : crystal_from_hdr
  use defs_wvltypes,      only : wvl_data
+ use m_paw_init,         only : pawinit,paw_gencond
  use m_pawang,           only : pawang_type
  use m_pawrad,           only : pawrad_type
  use m_pawtab,           only : pawtab_type
@@ -120,14 +122,14 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
  character(len=500) :: message
  integer :: my_natom,natom
  integer :: ibtot,isppol,ikibz,ib
- integer :: timrev,option,ierr,comm
+ integer :: timrev,option,ierr,comm,gnt_option
  integer :: bantot,mcg,mgfftf,nfftf,my_nspinor,comm_psp,psp_gencond
  integer,parameter :: response=0
  integer :: ask_accurate,gscase,ireadwf0,optorth
- logical :: remove_inv
+ logical :: remove_inv,call_pawinit
  real(dp) :: ecut_eff,ecutdg_eff
- real(dp) :: gsqcut_eff,gsqcutc_eff,ucvol
- real(dp) :: ecore
+ real(dp) :: gsqcut_eff,gsqcutc_eff,ucvol,gsqcut_shp
+ real(dp) :: ecore,hyb_range_fock
 
  !arrays
  integer :: npwtot(dtset%nkpt)
@@ -193,6 +195,26 @@ subroutine dmfet(acell,codvsn,dtfil,dtset,mpi_enreg,pawang,pawrad,pawtab,psps,rp
  call pspini(dtset,dtfil,ecore,psp_gencond,gsqcutc_eff,gsqcut_eff,&
 & pawrad,pawtab,psps,rprimd,comm_mpi=comm_psp)
 ! if(psp_gencond==1) write(std_out,*) "psp has been recomputed!"
+
+ if(psps%usepaw==1) then
+!  1-
+   gnt_option=1;if (dtset%pawxcdev==2.or.(dtset%pawxcdev==1.and.dtset%positron/=0)) gnt_option=2
+
+!  Test if we have to call pawinit
+!  Some gen-cond have to be added...
+   call paw_gencond(dtset,gnt_option,"test",call_pawinit)
+
+   if (psp_gencond==1.or.call_pawinit) then
+     gsqcut_shp=two*abs(dtset%diecut)*dtset%dilatmx**2/pi**2
+     hyb_range_fock=zero;if (dtset%ixc<0) call libxc_functionals_get_hybridparams(hyb_range=hyb_range_fock)
+     call pawinit(gnt_option,gsqcut_shp,hyb_range_fock,dtset%pawlcutd,dtset%pawlmix,&
+&     psps%mpsang,dtset%pawnphi,dtset%nsym,dtset%pawntheta,&
+&     pawang,pawrad,dtset%pawspnorb,pawtab,dtset%pawxcdev,dtset%xclevel,dtset%usepotzero)
+
+     ! Update internal values
+     call paw_gencond(dtset,gnt_option,"save",call_pawinit)
+   end if
+ end if
 
  ABI_ALLOCATE(occ,(dtset%mband*dtset%nkpt*dtset%nsppol))
  occ(:)=zero

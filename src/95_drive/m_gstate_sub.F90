@@ -48,6 +48,7 @@ module m_gstate_sub
 
  use m_pawang,           only : pawang_type
  use m_pawtab,           only : pawtab_type
+  use m_pawcprj,          only : pawcprj_type,pawcprj_free,pawcprj_alloc,pawcprj_getdim
  use m_pawfgr,           only : pawfgr_type,pawfgr_init
  use m_pawrad,           only : pawrad_type
  use m_paw_occupancies,  only : initrhoij
@@ -204,7 +205,7 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  integer :: mgfftf,nfftf,nfftot
  integer :: bantot,psp_gencond,gnt_option,usecprj,option
  integer :: mcprj,mband_cprj,ncpgr,itypat
- integer :: cnt,spin,ikpt,band,my_nspinor,mcg
+ integer :: cnt,spin,ikpt,band,my_nspinor,mcg,mcg_sub
  integer :: use_sc_dmft,pwind_alloc !useless
  integer :: iband
  integer,parameter :: formeig=0,level=101,response=0 ,cplex1=1, master=0
@@ -222,12 +223,14 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 
  real(dp) :: rmet(3,3),rprimd(3,3),rprimd_for_kg(3,3)
  real(dp) :: gmet(3,3),gprimd(3,3),gprimd_for_kg(3,3),gmet_for_kg(3,3)
+ real(dp),allocatable :: cg_sub(:,:)
  real(dp),allocatable :: occ(:),ph1df(:,:),ylm(:,:),ylmgr(:,:,:)
  real(dp),allocatable :: phnons(:,:,:)
  real(dp),pointer :: pwnsfac(:,:) !useless
  real(dp),pointer :: rhor(:,:),rhog(:,:),taug(:,:),taur(:,:)
 
  type(pawrhoij_type),pointer :: pawrhoij(:)
+ type(pawcprj_type),allocatable :: cprj(:,:)
 
  DBG_ENTER("COLL")
 
@@ -239,7 +242,7 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 !check compatability
  if(dtset%nkpt.ne.1) MSG_ERROR('Only support nkpt==1 for now!') 
  if(any(abs(dtset%nucdipmom)>0.0)) MSG_ERROR('Non-zero nucdipmom is not supported yet!')
- if(dtset%usefock==1) MSG_ERROR('Only support usefock==0 for now!')
+! if(dtset%usefock==1) MSG_ERROR('Only support usefock==0 for now!')
  if(dtset%nsppol.ne.1) MSG_ERROR('Only support nsppol==1 for now!')
  if(dtset%nspinor.ne.1) MSG_ERROR('Only support nspinor==1 for now!')
 
@@ -419,12 +422,12 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  end do
 
  my_nspinor=max(1,dtset%nspinor/mpi_enreg%nproc_spinor)
- mcg=dtset%mpw*my_nspinor*dtset%mband*dtset%mkmem*dtset%nsppol
- if (cnt == 0) then
-   mcg = 0
-   write(message,"(2(a,i0))")"rank: ",mpi_enreg%me, "does not have wavefunctions to treat. Setting mcg to: ",mcg
-   MSG_WARNING(message)
- end if
+! mcg=dtset%mpw*my_nspinor*dtset%mband*dtset%mkmem*dtset%nsppol
+! if (cnt == 0) then
+!   mcg = 0
+!   write(message,"(2(a,i0))")"rank: ",mpi_enreg%me, "does not have wavefunctions to treat. Setting mcg to: ",mcg
+!   MSG_WARNING(message)
+! end if
 
 #if 0
  if (dtset%usewvl == 0 .and. dtset%mpw > 0 .and. cnt /= 0)then
@@ -547,10 +550,24 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 
 !Initialize (eventually) electron-positron data
  nullify (electronpositron)
+ if (dtset%positron/=0) then
+   MSG_ERROR('only support positron==0!')
+ endif
 !###########################################################
 ! Initialisation of cprj
  usecprj=0; mcprj=0;mband_cprj=0
-#if 0
+ if (dtset%usepaw==1) then
+   if (associated(electronpositron)) then
+     if (dtset%positron/=0.and.electronpositron%dimcprj>0) usecprj=1
+   end if
+!   if (dtset%prtnabla>0) usecprj=1
+!   if (dtset%extrapwf>0) usecprj=1
+!   if (dtset%pawfatbnd>0)usecprj=1
+!   if (dtset%prtdos==3)  usecprj=1
+!   if (dtset%usewvl==1)  usecprj=1
+   if (dtset%nstep==0) usecprj=0
+   if (dtset%usefock==1)  usecprj=1
+ end if
  if (usecprj==0) then
    ABI_DATATYPE_ALLOCATE(cprj,(0,0))
  end if
@@ -573,7 +590,6 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
    call pawcprj_getdim(dimcprj_srt,dtset%natom,crystal%nattyp,dtset%ntypat,dtset%typat,pawtab,'O')
    call pawcprj_alloc(cprj,ncpgr,dimcprj_srt)
  end if
-#endif
 !###########################################################
 !### 12. Operations dependent of iscf value
 
@@ -608,17 +624,23 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 !  ###########################################################
 !  ### 14. Run SCF
 
+!compute cg_sub
+
+ mcg_sub = npwarr(1)*dim_all  !gamma point only
+ ABI_ALLOCATE(cg_sub,(2,mcg_sub))
+ call cgtosub(cg_sub,cg,npwarr(1),can2sub,dim_can,dim_all)
+
  if(present(emb_pot)) then
   call subscf_init(subscf_args,dtfil,dtset,psps,results_gs,crystal,nfftf,&
 &  pawtab,pawrad,pawang,pawfgr,mpi_enreg,&
-&  ylm,ylmgr,kg,cg,mcg,my_natom,npwarr,ecore,wvl,&
+&  ylm,ylmgr,kg,cg_sub,mcg_sub,cprj,mcprj,my_natom,npwarr,ecore,wvl,&
 &  occ,rhog,rhor,pawrhoij,dens,dim_sub,dim_all,&
 &  taug,taur,paw_dmft,dtefield,pwind_alloc,pwind,pwnsfac,electronpositron,&
 &  emb_pot)
  else
   call subscf_init(subscf_args,dtfil,dtset,psps,results_gs,crystal,nfftf,&
 &  pawtab,pawrad,pawang,pawfgr,mpi_enreg,&
-&  ylm,ylmgr,kg,cg,mcg,my_natom,npwarr,ecore,wvl,&
+&  ylm,ylmgr,kg,cg_sub,mcg_sub,cprj,mcprj,my_natom,npwarr,ecore,wvl,&
 &  occ,rhog,rhor,pawrhoij,dens,dim_sub,dim_all,&
 &  taug,taur,paw_dmft,dtefield,pwind_alloc,pwind,pwnsfac,electronpositron)
  endif
@@ -628,6 +650,8 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  else
    call subscf_run(subscf_args,can2sub,dim_can,dim_sub,dim_all)
  endif
+
+ ABI_DEALLOCATE(cg_sub)
 
  call subscf_destroy(subscf_args)
 

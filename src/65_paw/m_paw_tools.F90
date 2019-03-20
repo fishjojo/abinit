@@ -173,6 +173,8 @@ subroutine chkpawovlp(natom,ntypat,pawovlp,pawtab,rmet,typat,xred)
    end do
  end do
 
+ write(std_out,*) 'pawovlp=',pawovlp
+ write(std_out,*) 'ratio_percent_max(1)=',ratio_percent_max(1)
  stop_on_error=(abs(pawovlp)<=tol6.or.(pawovlp>tol6.and.ratio_percent_max(1)>pawovlp))
 
 !Print adapted message with overlap value

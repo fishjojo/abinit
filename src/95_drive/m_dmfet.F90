@@ -600,8 +600,9 @@ subroutine dmfet_core(this,rprim,codvsn)
 & comm_atom=this%mpi_enreg%comm_atom,mpi_atmtab=this%mpi_enreg%my_atmtab)
  call ebands_free(bstruct)
 
- ABI_ALLOCATE(dens_tot,(dim_sub,dim_sub))
+ call print_can2sub(this,this%dtset,this%dtfil,hdr,this%mpi_enreg)
 
+ ABI_ALLOCATE(dens_tot,(dim_sub,dim_sub))
 
  !total scf calc in subspace
  call init_results_gs(this%dtset%natom,this%dtset%nsppol,res_tot)
@@ -609,8 +610,6 @@ subroutine dmfet_core(this,rprim,codvsn)
 & this%cg,this%pawtab,this%pawrad,this%pawang,this%crystal%xred,&
 & dens_tot,this%can2sub,this%n_canonical,dim_sub,this%dim_all,this%sub_occ(1:this%dim_all),&
 & hdr=hdr) 
-
- call print_can2sub(this,this%dtset,this%dtfil,hdr,this%mpi_enreg)
 
  nsubsys = this%dtset%nsubsys
  ABI_DATATYPE_ALLOCATE(sub_dtsets,(nsubsys))
