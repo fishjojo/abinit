@@ -3040,7 +3040,7 @@ subroutine test_unitary(wan,mat,matT,ikpt)
 end subroutine test_unitary
 
 
-subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_all)
+subroutine get_can2sub(wan,dm_wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_all)
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -3054,7 +3054,7 @@ subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_al
   type(plowannier_type), intent(in) :: wan
   integer, intent(in) :: ikpt,nband
   integer,intent(inout) :: dim_imp,dim_sub,dim_all
-  real(dp),intent(in) :: occ(:)
+  real(dp),intent(in) :: occ(:),dm_wan(:,:,:,:)
   real(dp),intent(inout) :: sub_occ(nband)
   complex(dpc),intent(inout) :: can2sub(nband,nband)
 
@@ -3067,6 +3067,7 @@ subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_al
   real(dp) :: tmp1
   real(dp), allocatable :: imp_occ(:), bath_occ(:), rwork(:)
   real(dp), allocatable :: imp_occ_srt(:),bath_occ_srt(:)
+  real(dp), allocatable :: dm_wan_copy(:,:),loc2sub_imp(:,:)
 
   complex(dpc),allocatable :: Vij(:,:,:),Vij_copy(:,:,:),VTV(:,:,:)
   complex(dpc),allocatable :: U_imp(:,:), U_bath(:,:)
@@ -3079,6 +3080,62 @@ subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_al
 
   !nband = wan%bandf_wan-wan%bandi_wan+1
 
+
+! construct imp orbitals
+  dim_imp = wan%size_wan
+  ABI_ALLOCATE(imp_occ,(dim_imp))
+  ABI_ALLOCATE(dm_wan_copy,(dim_imp,dim_imp))
+  dm_wan_copy = dm_wan(:,:,1,1)
+
+  lwork = 6*dim_imp
+  ABI_ALLOCATE(rwork,(lwork))
+  call dsyev ('V','L',dim_imp,dm_wan_copy,dim_imp,imp_occ,rwork,lwork,info)
+  ABI_DEALLOCATE(rwork)
+
+  !remove numerical noise
+  do i=1,dim_imp
+    if(imp_occ(i)<zero) imp_occ(i)=zero
+    if(imp_occ(i)>2.0_dp) imp_occ(i)=2.0_dp
+  enddo
+
+  !sort eigenvalues
+  ABI_ALLOCATE(imp_occ_srt,(dim_imp))
+  imp_occ_srt = imp_occ
+  do i=1,dim_imp
+    imp_occ_srt(i) = max(-imp_occ_srt(i), imp_occ_srt(i)-2.0)
+  enddo
+
+  ABI_ALLOCATE(arg_imp,(dim_imp))
+  call dsortp(imp_occ_srt,1,dim_imp,arg_imp)
+  do i=1,dim_imp
+    imp_occ_srt(i) = imp_occ(arg_imp(i))
+  enddo
+
+  !remove rounding error
+  do i=1,dim_imp
+    if(abs(imp_occ_srt(i)-2.0_dp)<tol8) imp_occ_srt(i)=2.0_dp
+  enddo
+
+  write(message,'(2a)') ch10," imp_occ:"
+  call wrtout(std_out,message,'COLL')
+  do i=1,dim_imp
+    write(message,'(f14.10)') imp_occ_srt(i)
+    call wrtout(std_out,message,'COLL')
+  enddo
+  ABI_DEALLOCATE(imp_occ)
+
+  ABI_ALLOCATE(loc2sub_imp,(dim_imp,dim_imp))
+  do i=1,dim_imp
+    loc2sub_imp(:,i) = dm_wan_copy(:,arg_imp(i))
+  enddo
+  ABI_DEALLOCATE(arg_imp)
+  ABI_DEALLOCATE(dm_wan_copy)
+
+  can2sub = czero
+  call canonical_to_sub(wan,loc2sub_imp,can2sub(:,1:dim_imp),dim_imp,1,1)
+  ABI_DEALLOCATE(loc2sub_imp)
+
+!********************************************
   ABI_ALLOCATE(Vij,(nband,nband,wan%nsppol))
   Vij = czero
 
@@ -3108,65 +3165,65 @@ subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_al
   ABI_ALLOCATE(Vij_copy,(nband,nband,wan%nsppol))
   Vij_copy = Vij
 
-  do isppol = 1,wan%nsppol
-    do iband1=1,nband
-      do iband2=1,nband
-        fac = dsqrt(occ(iband1)*occ(iband2))
-        Vij(iband1,iband2,isppol) = Vij(iband1,iband2,isppol) * fac
-      enddo
-    enddo
-  enddo
+!  do isppol = 1,wan%nsppol
+!    do iband1=1,nband
+!      do iband2=1,nband
+!        fac = dsqrt(occ(iband1)*occ(iband2))
+!        Vij(iband1,iband2,isppol) = Vij(iband1,iband2,isppol) * fac
+!      enddo
+!    enddo
+!  enddo
 
-  ABI_ALLOCATE(imp_occ,(nband))
-  ABI_ALLOCATE(rwork,(3*nband-2))
-  lwork = 65*nband !Value to optimize the diagonalization
-  ABI_ALLOCATE(zwork,(lwork))
-  call zheev('v','u',nband,Vij(:,:,1),nband,imp_occ,zwork,lwork,rwork,info)
+!  ABI_ALLOCATE(imp_occ,(nband))
+!  ABI_ALLOCATE(rwork,(3*nband-2))
+!  lwork = 65*nband !Value to optimize the diagonalization
+!  ABI_ALLOCATE(zwork,(lwork))
+!  call zheev('v','u',nband,Vij(:,:,1),nband,imp_occ,zwork,lwork,rwork,info)
 
   !remove numerical noise
-  do i=1,nband
-    if(imp_occ(i)<zero) imp_occ(i)=zero
-    if(imp_occ(i)>2.0_dp) imp_occ(i)=2.0_dp
-  enddo
+!  do i=1,nband
+!    if(imp_occ(i)<zero) imp_occ(i)=zero
+!    if(imp_occ(i)>2.0_dp) imp_occ(i)=2.0_dp
+!  enddo
 
-  dim_imp = wan%size_wan
+!  dim_imp = wan%size_wan
 
-  ioff = nband - dim_imp + 1
-  if(imp_occ(ioff-1) > tol8) MSG_ERROR(" Something is wrong!") 
-  if(imp_occ(ioff) < tol8) MSG_WARNING("Empty orbitals in embedded region!")
+!  ioff = nband - dim_imp + 1
+!  if(imp_occ(ioff-1) > tol8) MSG_ERROR(" Something is wrong!") 
+!  if(imp_occ(ioff) < tol8) MSG_WARNING("Empty orbitals in embedded region!")
 
   !sort eigenvalues
-  ABI_ALLOCATE(imp_occ_srt,(dim_imp))
-  imp_occ_srt = imp_occ(ioff:nband)
-  do i=1,dim_imp
-    imp_occ_srt(i) = max(-imp_occ_srt(i), imp_occ_srt(i)-2.0)
-  enddo
+!  ABI_ALLOCATE(imp_occ_srt,(dim_imp))
+!  imp_occ_srt = imp_occ(ioff:nband)
+!  do i=1,dim_imp
+!    imp_occ_srt(i) = max(-imp_occ_srt(i), imp_occ_srt(i)-2.0)
+!  enddo
 
-  ABI_ALLOCATE(arg_imp,(dim_imp))
-  call dsortp(imp_occ_srt,1,dim_imp,arg_imp)
-  do i=1,dim_imp
-    imp_occ_srt(i) = imp_occ(arg_imp(i)+ioff-1)
-  enddo
+!  ABI_ALLOCATE(arg_imp,(dim_imp))
+!  call dsortp(imp_occ_srt,1,dim_imp,arg_imp)
+!  do i=1,dim_imp
+!    imp_occ_srt(i) = imp_occ(arg_imp(i)+ioff-1)
+!  enddo
 
   !remove rounding error
-  do i=1,dim_imp
-    if(abs(imp_occ_srt(i)-2.0_dp)<tol8) imp_occ_srt(i)=2.0_dp
-  enddo
+!  do i=1,dim_imp
+!    if(abs(imp_occ_srt(i)-2.0_dp)<tol8) imp_occ_srt(i)=2.0_dp
+!  enddo
 
-  write(message,'(2a)') ch10," imp_occ:"
-  call wrtout(std_out,message,'COLL')
-  do i=1,dim_imp
-    write(message,'(f14.10)') imp_occ_srt(i)
-    call wrtout(std_out,message,'COLL')
-  enddo 
+!  write(message,'(2a)') ch10," imp_occ:"
+!  call wrtout(std_out,message,'COLL')
+!  do i=1,dim_imp
+!    write(message,'(f14.10)') imp_occ_srt(i)
+!    call wrtout(std_out,message,'COLL')
+!  enddo 
 
-  ABI_DEALLOCATE(imp_occ)
+!  ABI_DEALLOCATE(imp_occ)
 
-  ABI_ALLOCATE(U_imp,(nband,dim_imp))
-  do i=1,dim_imp
-    U_imp(:,i) = Vij(:,arg_imp(i)+ioff-1,1)
-  enddo
-  ABI_DEALLOCATE(arg_imp)
+!  ABI_ALLOCATE(U_imp,(nband,dim_imp))
+!  do i=1,dim_imp
+!    U_imp(:,i) = Vij(:,arg_imp(i)+ioff-1,1)
+!  enddo
+!  ABI_DEALLOCATE(arg_imp)
 
 !*********************************************
 ! bath part
@@ -3188,8 +3245,10 @@ subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_al
   enddo
 
   ABI_ALLOCATE(bath_occ,(nband))
+  ABI_ALLOCATE(rwork,(3*nband-2))
+  lwork = 65*nband !Value to optimize the diagonalization
+  ABI_ALLOCATE(zwork,(lwork))
   call zheev('v','u',nband,VTV(:,:,1),nband,bath_occ,zwork,lwork,rwork,info)
-
   ABI_DEALLOCATE(rwork)
   ABI_DEALLOCATE(zwork)
 
@@ -3249,17 +3308,17 @@ subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_al
 !*********************************************
 ! compute can2sub
 !*********************************************
-  Vij = Vij_copy
-  do i=1,nband
-    Vij(:,i,1) = Vij(:,i,1) * dsqrt(occ(i))
-  enddo 
+!  Vij = Vij_copy
+!  do i=1,nband
+!    Vij(:,i,1) = Vij(:,i,1) * dsqrt(occ(i))
+!  enddo 
 
-  can2sub = czero
-  call zgemm('N','N',nband,dim_imp,nband,cone,Vij(:,:,1),nband,U_imp,nband,czero,can2sub(:,1:dim_imp),nband)
-  ABI_DEALLOCATE(U_imp)
-  do i=1,dim_imp
-    can2sub(:,i) = can2sub(:,i) / dsqrt(imp_occ_srt(i))
-  enddo
+!  can2sub = czero
+!  call zgemm('N','N',nband,dim_imp,nband,cone,Vij(:,:,1),nband,U_imp,nband,czero,can2sub(:,1:dim_imp),nband)
+!  ABI_DEALLOCATE(U_imp)
+!  do i=1,dim_imp
+!    can2sub(:,i) = can2sub(:,i) / dsqrt(imp_occ_srt(i))
+!  enddo
 
   !renormalize 
   do i=1,dim_imp
@@ -3326,7 +3385,7 @@ subroutine get_can2sub(wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub,dim_al
   dim_sub = 0
   do i=1,min(dim_imp,dim_bath)
     tmp1 = imp_occ_srt(i) + bath_occ_srt(i)
-    if(tmp1.lt.2.01 .and. tmp1.gt.1.99) then !a pair of entangled orbitals
+    if(imp_occ_srt(i)>tol8.and.tmp1<2.02.and.tmp1>1.98) then !a pair of entangled orbitals
        dim_sub = dim_sub + 1
     else
        exit

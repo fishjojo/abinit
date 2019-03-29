@@ -31,6 +31,7 @@ module m_gstate_sub
  use m_xmpi
  use m_mpinfo
  use m_libpaw_tools
+ use m_ebands
 
  use m_gemm_nonlop
  use m_bandfft_kpt
@@ -86,6 +87,9 @@ module m_gstate_sub
 
    type(wvl_data),pointer :: wvl => null()
 
+   type(crystal_t),pointer ::crystal_tot=>null()
+
+   character(len=6), pointer :: codvsn=>null()
    integer, pointer :: dim_can=>null()  !length of subspace basis orbitals
    integer, pointer :: dim_sub=>null() !dimension of subspace
    integer, pointer :: dim_all=>null()
@@ -100,7 +104,8 @@ module m_gstate_sub
 
 contains
 
-subroutine gstate_sub_input_var_init(this,acell,rprim,xred,natom,mcg,psps,mpi_enreg,dtfil,wvl,&
+subroutine gstate_sub_input_var_init(this,codvsn,acell,rprim,crystal_tot,&
+& xred,natom,mcg,psps,mpi_enreg,dtfil,wvl,&
 & cg,pawtab,pawrad,pawang,can2sub,dim_can,dim_sub,dim_all,sub_occ)
 
 
@@ -122,6 +127,9 @@ subroutine gstate_sub_input_var_init(this,acell,rprim,xred,natom,mcg,psps,mpi_en
  type(pawrad_type),intent(in),target :: pawrad(psps%ntypat*psps%usepaw)
  type(pawang_type),intent(in),target :: pawang
 
+ type(crystal_t),intent(in),target ::crystal_tot
+ character(len=6),intent(in),target :: codvsn
+
  integer, intent(in),target :: natom,mcg,dim_can,dim_sub,dim_all
  real(dp),intent(in),target :: acell(3)
  real(dp),intent(in),target :: rprim(3,3)
@@ -129,6 +137,9 @@ subroutine gstate_sub_input_var_init(this,acell,rprim,xred,natom,mcg,psps,mpi_en
  real(dp),intent(in),target :: cg(2,mcg)
  real(dp),intent(in),target :: sub_occ(dim_all)
  complex(dpc),intent(in),target :: can2sub(dim_can,dim_all)
+
+ this%codvsn=>codvsn
+ this%crystal_tot=>crystal_tot
 
  this%psps=>psps
  this%mpi_enreg=>mpi_enreg
@@ -151,10 +162,10 @@ end subroutine gstate_sub_input_var_init
 
 
 
-subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
+subroutine gstate_sub(codvsn,acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 & cg,pawtab,pawrad,pawang,xred,&
-& dens,can2sub,dim_can,dim_sub,dim_all,sub_occ,&
-& emb_pot,hdr) !optional
+& dens,can2sub,dim_can,dim_sub,dim_all,sub_occ,occ,mo_coeff,&
+& emb_pot,hdr_in,fock_mat,prtden,crystal_tot) !optional
 
 
 !This section has been created automatically by the script Abilint (TD).
@@ -179,23 +190,33 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  type(pawang_type),intent(inout) :: pawang
  type(pawfgr_type) :: pawfgr
 
+ integer, intent(in), optional :: prtden
  integer, intent(in) :: dim_can, dim_sub, dim_all
- real(dp),intent(in) :: sub_occ(dim_all)
+ character(len=6),intent(in) :: codvsn
 
  real(dp),intent(inout) :: acell(3)
  real(dp),intent(inout) :: xred(3,dtset%natom)
- real(dp), intent(in) :: cg(2,*)
+ real(dp),intent(in) :: cg(2,*)
 
+ real(dp),intent(in) :: sub_occ(dim_all)
  real(dp), intent(inout) :: dens(dim_sub,dim_sub),rprim(3,3)
+ real(dp), intent(inout) :: occ(dim_all*dtset%nkpt*dtset%nsppol)
  real(dp), intent(in), optional :: emb_pot(dim_sub,dim_sub)
- complex(dpc), intent(in) :: can2sub(dim_can,dim_all)
+
+ complex(dpc),intent(in) :: can2sub(dim_can,dim_all)
+ complex(dpc),intent(inout)::mo_coeff(dim_all,dim_all)
+ complex(dpc),intent(inout),optional :: fock_mat(dim_sub,dim_sub)
+
 
  type(subscf_type) :: subscf_args
  type(crystal_t) :: crystal
  logical :: has_to_init,call_pawinit
  character(len=500) :: message
 
- type(hdr_type),intent(inout),optional :: hdr
+ type(hdr_type),intent(inout),target,optional :: hdr_in
+ type(hdr_type),target :: hdr_local
+ type(hdr_type),pointer :: hdr_ptr
+ type(ebands_t) :: bstruct
 
  type(paw_dmft_type) :: paw_dmft !NYI
  type(efield_type) :: dtefield !NYI
@@ -224,7 +245,7 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  real(dp) :: rmet(3,3),rprimd(3,3),rprimd_for_kg(3,3)
  real(dp) :: gmet(3,3),gprimd(3,3),gprimd_for_kg(3,3),gmet_for_kg(3,3)
  real(dp),allocatable :: cg_sub(:,:)
- real(dp),allocatable :: occ(:),ph1df(:,:),ylm(:,:),ylmgr(:,:,:)
+ real(dp),allocatable :: ph1df(:,:),ylm(:,:),ylmgr(:,:,:)
  real(dp),allocatable :: phnons(:,:,:)
  real(dp),pointer :: pwnsfac(:,:) !useless
  real(dp),pointer :: rhor(:,:),rhog(:,:),taug(:,:),taur(:,:)
@@ -236,7 +257,7 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 
 !debug
  integer,save :: icalled = 0
-! type(crystal_t),intent(in) ::crystal_tot
+ type(crystal_t),intent(in),optional ::crystal_tot
  icalled = icalled + 1
 
 !check compatability
@@ -363,7 +384,8 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 
 
  !simply use default occ FIXME
- ABI_ALLOCATE(occ,(dim_all*dtset%nkpt*dtset%nsppol))
+! ABI_ALLOCATE(occ,(dim_all*dtset%nkpt*dtset%nsppol))
+ if(.not.present(fock_mat)) then
  occ =zero
 ! occ(:) = dtset%occ_orig(:,1)
  do iband=1,int(dtset%nelect)/2
@@ -372,12 +394,22 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  do iband=dim_sub+1,dim_all
    occ(iband) = sub_occ(iband)
  enddo
-
- if(present(hdr))then
-   call hdr_update(hdr,bantot,hdr%etot,hdr%fermie,&
-&   hdr%residm,rprimd,occ,pawrhoij,xred,dtset%amu_orig(:,1),&
-&   comm_atom=mpi_enreg%comm_atom,mpi_atmtab=mpi_enreg%my_atmtab)
  endif
+
+ if(present(hdr_in))then
+   hdr_ptr=>hdr_in
+ else
+   bstruct = ebands_from_dtset(dtset, npwarr)
+   call hdr_init(bstruct,codvsn,dtset,hdr_local,pawtab,0,psps,wvl%descr,&
+&   comm_atom=mpi_enreg%comm_atom,mpi_atmtab=mpi_enreg%my_atmtab)
+   call ebands_free(bstruct)
+   hdr_ptr=>hdr_local
+ endif
+
+
+ call hdr_update(hdr_ptr,bantot,hdr_ptr%etot,hdr_ptr%fermie,&
+&  hdr_ptr%residm,rprimd,occ,pawrhoij,xred,dtset%amu_orig(:,1),&
+&  comm_atom=mpi_enreg%comm_atom,mpi_atmtab=mpi_enreg%my_atmtab)
 
 !###########################################################
 !### 04. Symmetry operations when nsym>1
@@ -532,7 +564,7 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
      call pawinit(gnt_option,gsqcut_shp,hyb_range_fock,dtset%pawlcutd,dtset%pawlmix,&
 &     psps%mpsang,dtset%pawnphi,dtset%nsym,dtset%pawntheta,&
 &     pawang,pawrad,dtset%pawspnorb,pawtab,dtset%pawxcdev,dtset%xclevel,dtset%usepotzero)
-
+     write(std_out,*) "called pawinit!"
      ! Update internal values
      call paw_gencond(dtset,gnt_option,"save",call_pawinit)
    end if
@@ -630,13 +662,20 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
  ABI_ALLOCATE(cg_sub,(2,mcg_sub))
  call cgtosub(cg_sub,cg,npwarr(1),can2sub,dim_can,dim_all)
 
- if(present(emb_pot)) then
+ if(present(fock_mat).and.present(emb_pot))then
   call subscf_init(subscf_args,dtfil,dtset,psps,results_gs,crystal,nfftf,&
 &  pawtab,pawrad,pawang,pawfgr,mpi_enreg,&
 &  ylm,ylmgr,kg,cg_sub,mcg_sub,cprj,mcprj,my_natom,npwarr,ecore,wvl,&
 &  occ,rhog,rhor,pawrhoij,dens,dim_sub,dim_all,&
 &  taug,taur,paw_dmft,dtefield,pwind_alloc,pwind,pwnsfac,electronpositron,&
-&  emb_pot)
+&  emb_pot=emb_pot,ireadwf=1,fock_mat=fock_mat,subham_sub=mo_coeff)
+ else if(present(emb_pot)) then
+  call subscf_init(subscf_args,dtfil,dtset,psps,results_gs,crystal,nfftf,&
+&  pawtab,pawrad,pawang,pawfgr,mpi_enreg,&
+&  ylm,ylmgr,kg,cg_sub,mcg_sub,cprj,mcprj,my_natom,npwarr,ecore,wvl,&
+&  occ,rhog,rhor,pawrhoij,dens,dim_sub,dim_all,&
+&  taug,taur,paw_dmft,dtefield,pwind_alloc,pwind,pwnsfac,electronpositron,&
+&  emb_pot=emb_pot,subham_sub=mo_coeff)
  else
   call subscf_init(subscf_args,dtfil,dtset,psps,results_gs,crystal,nfftf,&
 &  pawtab,pawrad,pawang,pawfgr,mpi_enreg,&
@@ -645,10 +684,10 @@ subroutine gstate_sub(acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,wvl,&
 &  taug,taur,paw_dmft,dtefield,pwind_alloc,pwind,pwnsfac,electronpositron)
  endif
 
- if(present(hdr))then
-   call subscf_run(subscf_args,can2sub,dim_can,dim_sub,dim_all,hdr=hdr)
+ if(present(prtden))then
+   call subscf_run(subscf_args,can2sub,dim_can,dim_sub,dim_all,hdr_ptr,prtden=prtden,crystal_tot=crystal_tot)
  else
-   call subscf_run(subscf_args,can2sub,dim_can,dim_sub,dim_all)
+   call subscf_run(subscf_args,can2sub,dim_can,dim_sub,dim_all,hdr_ptr)
  endif
 
  ABI_DEALLOCATE(cg_sub)

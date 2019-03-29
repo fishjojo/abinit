@@ -477,6 +477,14 @@ subroutine dtfil_init(dtfil,dtset,filnam,filstat,idtset,jdtset_,mpi_enreg,ndtset
  dtfil%fnameabo_nlcc_derivs=trim(dtfil%filnam_ds(4))//'_nlcc_derivs_'
  dtfil%fnameabo_pspdata=trim(dtfil%filnam_ds(4))//'_pspdata_'
 
+!sDMFET
+ dtfil%fnameabo_suborb=trim(dtfil%filnam_ds(4))//'_SUBORB_WFK'
+ dtfil%fnameabo_impwfk=trim(dtfil%filnam_ds(4))//'_IMP_WFK'
+ dtfil%fnameabo_bathwfk=trim(dtfil%filnam_ds(4))//'_BATH_WFK'
+ dtfil%fnameabo_impden=trim(dtfil%filnam_ds(4))//'_IMP_DEN'
+ dtfil%fnameabo_bathden=trim(dtfil%filnam_ds(4))//'_BATH_DEN'
+!end sDMFET
+
 !-------------------------------------------------------------------------------------------
 !Build name of files from dtfil%filnam_ds(5)
 

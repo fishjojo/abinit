@@ -28,6 +28,9 @@ module m_dmfet
  use m_errors
  use defs_datatypes
  use defs_abitypes
+ use libxc_functionals
+ use m_xcdata,           only : get_xclevel,get_auxc_ixc
+ use m_mpinfo,           only : distrb2_hf
 
  use m_crystal,          only : crystal_t,crystal_init,crystal_print
  use defs_wvltypes,      only : wvl_data
@@ -361,7 +364,9 @@ subroutine dmfet_subspac(this)
  ABI_ALLOCATE(this%can2sub,(nband,nband))
  ABI_ALLOCATE(this%sub_occ,(nband))
  
- call get_can2sub(wan,1,this%occ,nband,this%can2sub,this%sub_occ,this%dim_imp,this%dim_sub,this%dim_all)
+! call get_can2sub(wan,1,this%occ,nband,this%can2sub,this%sub_occ,this%dim_imp,this%dim_sub,this%dim_all)
+
+ call dmfet_wan2sub(this,wan)
 
  write(message,'(3(a,i0,a))') ' dim_imp = ', this%dim_imp, ch10,&
 & ' dim_sub = ', this%dim_sub, ch10,&
@@ -467,11 +472,13 @@ subroutine dmfet_wan2sub(this,wan)
 !      write(std_out,*) onedm_wan(ii,:,1,1) 
 !   enddo
 
- ABI_ALLOCATE(this%occ_wan,(wan%size_wan))
- ABI_ALLOCATE(loc2sub,(wan%size_wan,wan%size_wan))
- call build_subspace(onedm_wan,loc2sub,this%occ_wan,6,wan%size_wan,dim_sub,n_full)
- ABI_ALLOCATE(this%can2sub,(wan%size_wan,wan%size_wan))
- call canonical_to_sub(wan,loc2sub,this%can2sub,wan%size_wan,1,1)
+ call get_can2sub(wan,onedm_wan,1,this%occ,nbands,this%can2sub,this%sub_occ,this%dim_imp,this%dim_sub,this%dim_all)
+
+! ABI_ALLOCATE(this%occ_wan,(wan%size_wan))
+! ABI_ALLOCATE(loc2sub,(wan%size_wan,wan%size_wan))
+! call build_subspace(onedm_wan,loc2sub,this%occ_wan,6,wan%size_wan,dim_sub,n_full)
+! ABI_ALLOCATE(this%can2sub,(wan%size_wan,wan%size_wan))
+! call canonical_to_sub(wan,loc2sub,this%can2sub,wan%size_wan,1,1)
 
 
 !   ABI_ALLOCATE(uuT,(wan%size_wan,wan%size_wan,wan%nkpt))
@@ -487,11 +494,11 @@ subroutine dmfet_wan2sub(this,wan)
 !      write(std_out,*) uTu(ii,:,1)
 !   enddo
 
- ABI_DEALLOCATE(loc2sub)
+! ABI_DEALLOCATE(loc2sub)
  ABI_DEALLOCATE(onedm_wan)
 
- this%dim_sub = dim_sub
- this%n_frozen = n_full
+! this%dim_sub = dim_sub
+! this%n_frozen = n_full
 
 
  ! KS eigenvalue matrix
@@ -506,14 +513,14 @@ subroutine dmfet_wan2sub(this,wan)
    end do
  end do
 
- ABI_ALLOCATE(opersub,(wan%size_wan,wan%size_wan))
- call compute_oper_ks2sub(operks(1,:,:,1),opersub,this%can2sub,nbands,wan%size_wan)
+ ABI_ALLOCATE(opersub,(nbands,nbands))
+ call compute_oper_ks2sub(operks(1,:,:,1),opersub,this%can2sub,nbands,nbands)
 
- ABI_ALLOCATE(eig,(wan%size_wan))
- ABI_ALLOCATE(rwork,(3*wan%size_wan-2))
- lwork = 65*wan%size_wan ! Value to optimize speed of the diagonalization
+ ABI_ALLOCATE(eig,(nbands))
+ ABI_ALLOCATE(rwork,(3*nbands-2))
+ lwork = 65*nbands ! Value to optimize speed of the diagonalization
  ABI_ALLOCATE(zwork,(lwork))
- call zheev('v','u',wan%size_wan,opersub,wan%size_wan,eig,zwork,lwork,rwork,info)
+ call zheev('v','u',nbands,opersub,nbands,eig,zwork,lwork,rwork,info)
  write(ab_out,*) "debug: eigen_sub"
  write(ab_out,*) eig(:)
 
@@ -580,7 +587,8 @@ subroutine dmfet_core(this,rprim,codvsn)
  integer :: me,master
 
 !arrays
- real(dp),allocatable :: dens_tot(:,:),emb_pot(:,:)
+ real(dp),allocatable :: dens_tot(:,:),emb_pot(:,:),occ_dummy(:)
+ complex(dpc),allocatable::mo_coeff(:,:)
 
 !local MPI
 ! type(MPI_type) :: l_mpi_enreg
@@ -605,11 +613,14 @@ subroutine dmfet_core(this,rprim,codvsn)
  ABI_ALLOCATE(dens_tot,(dim_sub,dim_sub))
 
  !total scf calc in subspace
+ ABI_ALLOCATE(occ_dummy,(this%dim_all))
+ ABI_ALLOCATE(mo_coeff,(this%dim_all,this%dim_all))
  call init_results_gs(this%dtset%natom,this%dtset%nsppol,res_tot)
- call gstate_sub(this%acell,this%dtset,this%psps,rprim,res_tot,this%mpi_enreg,this%dtfil,this%wvl,&
+ call gstate_sub(codvsn,this%acell,this%dtset,this%psps,rprim,res_tot,this%mpi_enreg,this%dtfil,this%wvl,&
 & this%cg,this%pawtab,this%pawrad,this%pawang,this%crystal%xred,&
 & dens_tot,this%can2sub,this%n_canonical,dim_sub,this%dim_all,this%sub_occ(1:this%dim_all),&
-& hdr=hdr) 
+& occ_dummy,mo_coeff,&
+& hdr_in=hdr) 
 
  nsubsys = this%dtset%nsubsys
  ABI_DATATYPE_ALLOCATE(sub_dtsets,(nsubsys))
@@ -623,14 +634,19 @@ subroutine dmfet_core(this,rprim,codvsn)
    ABI_ALLOCATE(dens_sub(i)%value, (dim_sub,dim_sub))
  enddo
 
- call gstate_sub_input_var_init(scf_inp,this%acell,rprim,this%crystal%xred,this%dtset%natom,this%mcg,this%psps,this%mpi_enreg,&
-& this%dtfil,this%wvl,this%cg,this%pawtab,this%pawrad,this%pawang,this%can2sub,this%n_canonical,dim_sub,this%dim_all,this%sub_occ(1:this%dim_all))
+ call gstate_sub_input_var_init(scf_inp,codvsn,this%acell,rprim,this%crystal,&
+& this%crystal%xred,this%dtset%natom,this%mcg,this%psps,this%mpi_enreg,&
+& this%dtfil,this%wvl,this%cg,this%pawtab,this%pawrad,this%pawang,&
+& this%can2sub,this%n_canonical,dim_sub,this%dim_all,this%sub_occ(1:this%dim_all))
 
  call oep_init(oep_args,scf_inp,dens_tot,dens_sub,emb_pot,opt_algorithm,sub_dtsets,nsubsys)
- call oep_run(oep_args,this%dtset%vemb_opt_w_tol,this%dtset%vemb_opt_cycle)
+ call oep_run_split(oep_args,this%dtset%vemb_opt_w_tol,this%dtset%vemb_opt_cycle)
+
 
 ! call print_vemb(this,this%dtset,hdr,this%dtfil,this%crystal,this%mpi_enreg,this%pawfgr,this%kg,this%npwarr,&
 !& this%cg,this%mcg,oep_args%V_emb,this%can2sub,this%n_canonical,dim_sub,this%crystal%ucvol)
+
+ call post_energy(this,codvsn,sub_dtsets(1),rprim,oep_args%V_emb,this%n_canonical,this%dim_sub)
 
  call destroy_oep(oep_args)
 
@@ -644,6 +660,125 @@ subroutine dmfet_core(this,rprim,codvsn)
 
 end subroutine dmfet_core
 
+
+!!****f* m_dmfet/post_energy
+!! NAME
+!! post_energy
+!!
+!! FUNCTION
+!! Run a post hybrid functional DFT calculation
+!!
+!!
+!! SOURCE
+
+subroutine post_energy(this,codvsn,dtset,rprim,V_emb,dim_can,dim_sub)
+
+ implicit none
+
+ type(dmfet_type), intent(inout) :: this
+ type(dataset_type),intent(inout) :: dtset
+ character(len=6),intent(in) :: codvsn
+ integer,intent(in) :: dim_can,dim_sub
+ real(dp),intent(in) :: V_emb(dim_sub,dim_sub)
+ real(dp),intent(inout) :: rprim(3,3)
+
+
+ type(results_gs_type) :: res_emb
+ integer :: ixc_old,ixc
+ real(dp),allocatable :: dens_emb(:,:),occ(:),occ_dummy(:)
+ complex(dpc),allocatable :: mo_coeff(:,:)
+
+ ABI_ALLOCATE(dens_emb,(dim_sub,dim_sub))
+ ABI_ALLOCATE(occ,(dim_sub))
+ ABI_ALLOCATE(occ_dummy,(dim_sub))
+ ABI_ALLOCATE(mo_coeff,(dim_sub,dim_sub))
+
+ occ =zero; dens_emb=zero
+
+ ixc_old = dtset%ixc
+ ixc = -428 !HSE06 
+ 
+
+ if (ixc_old<0) call libxc_functionals_end()
+
+ dtset%ixc = ixc
+!Initialize xclevel and usefock
+ call get_xclevel(ixc,dtset%xclevel,dtset%usefock)
+ if(dtset%auxc_ixc==0)then
+   call get_auxc_ixc(dtset%auxc_ixc,ixc)
+ end if
+!Now take care of the parameters for hybrid functionals
+ if(dtset%usefock==1)then
+
+   if(ixc ==40 .or. ixc ==41 .or. ixc ==42)then
+     dtset%hyb_mixing_sr=zero
+     dtset%hyb_range_dft=zero ; dtset%hyb_range_fock=zero
+     if(ixc==40)dtset%hyb_mixing=one
+     if(ixc==41)dtset%hyb_mixing=quarter
+     if(ixc==42)dtset%hyb_mixing=third
+   else if(ixc==-427)then   ! Special case of HSE03
+     dtset%hyb_mixing=zero  ; dtset%hyb_mixing_sr=quarter
+     dtset%hyb_range_dft=0.15_dp*two**third  ; dtset%hyb_range_fock=0.15_dp*sqrt(half)
+   else if (ixc<0) then
+     call libxc_functionals_init(ixc,dtset%nspden)
+     call libxc_functionals_get_hybridparams(hyb_mixing=dtset%hyb_mixing,hyb_mixing_sr=dtset%hyb_mixing_sr,&
+&     hyb_range=dtset%hyb_range_dft)
+     call libxc_functionals_end()
+     dtset%hyb_range_fock=dtset%hyb_range_dft
+   end if
+ endif
+
+
+ if(dtset%paral_kgb==0)then
+   if (dtset%usefock==1) then
+       if (dtset%nphf>1) this%mpi_enreg%paral_hf=1
+       this%mpi_enreg%nproc_hf = dtset%nphf
+       if (dtset%npkpt/=1) then
+         this%mpi_enreg%nproc_kpt = dtset%npkpt
+       else
+         this%mpi_enreg%nproc_kpt = this%mpi_enreg%nproc_cell/this%mpi_enreg%nproc_hf
+       end if
+   endif
+ endif
+
+ if(dtset%paral_kgb>=0) then
+     if (dtset%usefock==1) then
+       ABI_ALLOCATE(this%mpi_enreg%distrb_hf,(dtset%nkpthf,dtset%nbandhf,1))
+!      The dimension of distrb_hf are given by %nkpthf and %nbandhf.
+!      We assume that there will be no dependence in spinpol for all the
+!      occupied states.
+       this%mpi_enreg%distrb_hf=0
+     end if
+
+     if(xmpi_paral==1 .and. dtset%usewvl == 0) then
+         if (dtset%usefock==1) then
+           call distrb2_hf(dtset%nbandhf,dtset%nkpthf,this%mpi_enreg%nproc_cell,dtset%nsppol,this%mpi_enreg)
+         end if
+     endif
+ endif
+
+ if (ixc<0) call libxc_functionals_init(ixc,dtset%nspden)
+
+ write(std_out,*) "Post hybrid functional DFT calculation:"
+ write(std_out,*) "usefock = ",dtset%usefock
+
+ call init_results_gs(dtset%natom,dtset%nsppol,res_emb)
+ call gstate_sub(codvsn,this%acell,dtset,this%psps,rprim,res_emb,this%mpi_enreg,this%dtfil,this%wvl,&
+& this%cg,this%pawtab,this%pawrad,this%pawang,this%crystal%xred,&
+& dens_emb,this%can2sub,dim_can,dim_sub,dim_sub,occ,occ_dummy,mo_coeff,&
+& emb_pot=V_emb)
+
+ write(std_out,*) "energy of high-level subsystem imp: ",res_emb%etotal
+
+ if (ixc<0) call libxc_functionals_end()
+ dtset%ixc = ixc_old
+ if (ixc_old<0) call libxc_functionals_init(ixc_old,dtset%nspden)
+ 
+
+ ABI_DEALLOCATE(dens_emb)
+ ABI_DEALLOCATE(occ)
+
+end subroutine post_energy
 
 
 !!****f* m_dmfet/dmfet_run
@@ -763,20 +898,31 @@ subroutine build_subsys(dtset,sub_dtsets,nsubsys)
    !ABI_ALLOCATE(sub_dtsets(i)%xred_orig,(3,sub_natom,1))
 
    !ABI_ALLOCATE(sub_xreds(i)%value,(3,sub_natom))
-   
-   do j=1,sub_natom
+  
+   if(i==1)then 
+    do j=1,sub_natom
      ia(j) = dtset%subsys_iatom(j+ioff)
      !sub_dtsets(i)%typat(j) = dtset%typat(ia)
      !sub_dtsets(i)%xred_orig(:,j,1) = dtset%xred_orig(:,ia,1)
      !sub_xreds(i)%value(:,j) = crystal%xred(:,ia)
-   enddo
+    enddo
 
-   do j=1,dtset%natom
+    do j=1,dtset%natom
       do k=1,sub_natom
         if(ia(k).eq.j) goto 200
       enddo
       sub_dtsets(i)%typat(j) = dtset%typat(j) + dtset%ntypat/2
 200 enddo
+   else if(i==2)then
+    do j=1,dtset%natom
+      do k=1,dtset%subsys_natom(1)
+        if(j==ia(k)) then
+          sub_dtsets(i)%typat(j) = dtset%typat(j) + dtset%ntypat/2
+          exit
+        endif
+      enddo
+    enddo
+   endif
 
    call dtset_chkneu(dtset%charge,sub_dtsets(i),dtset%occopt)
 
@@ -1122,7 +1268,7 @@ subroutine print_can2sub(this,dtset,dtfil,hdr,mpi_enreg)
  ABI_ALLOCATE(resid,(dim_all*dtset%nkpt*dtset%nsppol))
  ABI_ALLOCATE(eigen,(dim_all*dtset%nkpt*dtset%nsppol))
  eigen(:)=zero ; resid(:)=zero
- call outwf(cg_new,dtset,this%psps,eigen,dtfil%fnameabo_wfk,hdr,this%kg,dtset%kptns,&
+ call outwf(cg_new,dtset,this%psps,eigen,dtfil%fnameabo_suborb,hdr,this%kg,dtset%kptns,&
 &   dim_all,mcg,dtset%mkmem,mpi_enreg,dtset%mpw,dtset%natom,&
 &   nband_sub,dtset%nkpt,this%npwarr,dtset%nsppol,&
 &   this%sub_occ(1:dim_all),resid,0,dtfil%unwff2,this%wvl%wfs,this%wvl%descr)

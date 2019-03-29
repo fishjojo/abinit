@@ -979,11 +979,10 @@ contains
 !subsys_iatom
  narr=mxvals%natom
  do idtset=0,ndtset_alloc       ! specific size for each dataset
-   narrm(idtset)=dtsets(idtset)%natom
-   if(idtset==0) then
-     narrm(idtset)=mxvals%natom
-   else if(dtsets(idtset)%nsubsys<=0) then
+   if(dtsets(idtset)%nsubsys<=0) then
      narrm(idtset)=0
+   else
+     narrm(idtset)=dtsets(idtset)%subsys_natom(1)
    endif
    if (narrm(idtset)>0.and.dtsets(idtset)%nsubsys>0) then
      intarr(1:narrm(idtset),idtset)=dtsets(idtset)%subsys_iatom(1:narrm(idtset))

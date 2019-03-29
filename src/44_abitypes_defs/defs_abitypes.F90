@@ -1525,6 +1525,14 @@ type dataset_type
   character(len=fnlen) :: fnameabo_nlcc_derivs
   character(len=fnlen) :: fnameabo_pspdata
 
+! sDMFET
+  character(len=fnlen) :: fnameabo_suborb
+  character(len=fnlen) :: fnameabo_impwfk
+  character(len=fnlen) :: fnameabo_bathwfk
+  character(len=fnlen) :: fnameabo_impden
+  character(len=fnlen) :: fnameabo_bathden
+! end sDMFET
+
 !The following filenames are initialized only iniside itimimage, iimage and itime loops,
 !and are appended with the adequate specifier 'app'.
 

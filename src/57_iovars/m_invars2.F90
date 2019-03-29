@@ -3289,8 +3289,8 @@ subroutine invars2(bravais,dtset,iout,jdtset,lenstr,&
    call intagm(dprarr,intarr,jdtset,marr,dtset%nsubsys,string(1:lenstr),'subsys_natom',tread,'INT')
    if(tread==1) dtset%subsys_natom(1:dtset%nsubsys)=intarr(1:dtset%nsubsys)
 
-   call intagm(dprarr,intarr,jdtset,marr,dtset%natom,string(1:lenstr),'subsys_iatom',tread,'INT')
-   if(tread==1) dtset%subsys_iatom(1:dtset%natom)=intarr(1:dtset%natom)
+   call intagm(dprarr,intarr,jdtset,marr,dtset%subsys_natom(1),string(1:lenstr),'subsys_iatom',tread,'INT')
+   if(tread==1) dtset%subsys_iatom(1:dtset%subsys_natom(1))=intarr(1:dtset%subsys_natom(1))
  end if
 
 
