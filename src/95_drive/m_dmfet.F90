@@ -424,9 +424,9 @@ subroutine dmfet_wan2sub(this,wan)
  type(operwan_type), allocatable :: operwan(:,:,:)
  complex(dpc), allocatable :: operks(:,:,:,:)
 
- real(dp), allocatable :: onedm_wan(:,:,:,:), loc2sub(:,:)
+ !real(dp), allocatable :: loc2sub(:,:)
  !complex(dpc), allocatable :: uuT(:,:,:), uTu(:,:,:)
- complex(dpc), allocatable :: opersub(:,:)
+ complex(dpc), allocatable :: opersub(:,:), onedm_wan(:,:,:,:)
  integer:: dim_sub, n_full
 
  integer :: nbands,isppol,iband1,ibandc,ikpt
@@ -572,7 +572,7 @@ subroutine dmfet_core(this,rprim,codvsn)
  character(len=6),intent(in) :: codvsn
 
  type(dataset_type),allocatable :: sub_dtsets(:)
- type(coeff2_type),allocatable :: dens_sub(:)
+ type(coeff3_type),allocatable :: dens_sub(:)
  type(oep_type) :: oep_args
 
  type(results_gs_type) :: res_tot
@@ -587,7 +587,7 @@ subroutine dmfet_core(this,rprim,codvsn)
  integer :: me,master
 
 !arrays
- real(dp),allocatable :: dens_tot(:,:),emb_pot(:,:),occ_dummy(:)
+ real(dp),allocatable :: dens_tot(:,:,:),emb_pot(:,:,:),occ_dummy(:)
  complex(dpc),allocatable::mo_coeff(:,:)
 
 !local MPI
@@ -610,7 +610,7 @@ subroutine dmfet_core(this,rprim,codvsn)
 
  call print_can2sub(this,this%dtset,this%dtfil,hdr,this%mpi_enreg)
 
- ABI_ALLOCATE(dens_tot,(dim_sub,dim_sub))
+ ABI_ALLOCATE(dens_tot,(2,dim_sub,dim_sub))
 
  !total scf calc in subspace
  ABI_ALLOCATE(occ_dummy,(this%dim_all))
@@ -622,16 +622,17 @@ subroutine dmfet_core(this,rprim,codvsn)
 & occ_dummy,mo_coeff,&
 & hdr_in=hdr) 
 
+
  nsubsys = this%dtset%nsubsys
  ABI_DATATYPE_ALLOCATE(sub_dtsets,(nsubsys))
  call build_subsys(this%dtset,sub_dtsets,nsubsys)
 
- ABI_ALLOCATE(emb_pot,(dim_sub,dim_sub))
+ ABI_ALLOCATE(emb_pot,(2,dim_sub,dim_sub))
  emb_pot = zero
 
  ABI_DATATYPE_ALLOCATE(dens_sub,(nsubsys))
  do i=1,nsubsys
-   ABI_ALLOCATE(dens_sub(i)%value, (dim_sub,dim_sub))
+   ABI_ALLOCATE(dens_sub(i)%value, (2,dim_sub,dim_sub))
  enddo
 
  call gstate_sub_input_var_init(scf_inp,codvsn,this%acell,rprim,this%crystal,&
@@ -646,7 +647,7 @@ subroutine dmfet_core(this,rprim,codvsn)
 ! call print_vemb(this,this%dtset,hdr,this%dtfil,this%crystal,this%mpi_enreg,this%pawfgr,this%kg,this%npwarr,&
 !& this%cg,this%mcg,oep_args%V_emb,this%can2sub,this%n_canonical,dim_sub,this%crystal%ucvol)
 
- call post_energy(this,codvsn,sub_dtsets(1),rprim,oep_args%V_emb,this%n_canonical,this%dim_sub)
+ call post_energy(this,codvsn,hdr,sub_dtsets(1),rprim,oep_args%V_emb,this%n_canonical,this%dim_sub)
 
  call destroy_oep(oep_args)
 
@@ -671,32 +672,48 @@ end subroutine dmfet_core
 !!
 !! SOURCE
 
-subroutine post_energy(this,codvsn,dtset,rprim,V_emb,dim_can,dim_sub)
+subroutine post_energy(this,codvsn,hdr,dtset,rprim,V_emb,dim_can,dim_sub)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'post_energy'
+!End of the abilint section
 
  implicit none
 
  type(dmfet_type), intent(inout) :: this
+ type(hdr_type),intent(inout) :: hdr
  type(dataset_type),intent(inout) :: dtset
  character(len=6),intent(in) :: codvsn
  integer,intent(in) :: dim_can,dim_sub
- real(dp),intent(in) :: V_emb(dim_sub,dim_sub)
+ real(dp),intent(in) :: V_emb(2,dim_sub,dim_sub)
  real(dp),intent(inout) :: rprim(3,3)
 
 
  type(results_gs_type) :: res_emb
- integer :: ixc_old,ixc
- real(dp),allocatable :: dens_emb(:,:),occ(:),occ_dummy(:)
+ integer :: ixc_old,ixc,mcg,nband_sub(1)
+ real(dp),allocatable :: dens_emb(:,:,:),occ(:),occ_out(:),cg_sub(:,:),cg_new(:,:)
+ real(dp),allocatable :: resid(:),eigen(:)
  complex(dpc),allocatable :: mo_coeff(:,:)
 
- ABI_ALLOCATE(dens_emb,(dim_sub,dim_sub))
+ ABI_ALLOCATE(dens_emb,(2,dim_sub,dim_sub))
  ABI_ALLOCATE(occ,(dim_sub))
- ABI_ALLOCATE(occ_dummy,(dim_sub))
+ ABI_ALLOCATE(occ_out,(dim_sub))
  ABI_ALLOCATE(mo_coeff,(dim_sub,dim_sub))
 
  occ =zero; dens_emb=zero
 
  ixc_old = dtset%ixc
  ixc = -428 !HSE06 
+
+
+!hack
+ dtset%typat(16) = dtset%typat(16) + dtset%ntypat/2
+ dtset%charge=-7.0
+ call dtset_chkneu(dtset%charge,dtset,dtset%occopt)
+!end hack
  
 
  if (ixc_old<0) call libxc_functionals_end()
@@ -765,10 +782,33 @@ subroutine post_energy(this,codvsn,dtset,rprim,V_emb,dim_can,dim_sub)
  call init_results_gs(dtset%natom,dtset%nsppol,res_emb)
  call gstate_sub(codvsn,this%acell,dtset,this%psps,rprim,res_emb,this%mpi_enreg,this%dtfil,this%wvl,&
 & this%cg,this%pawtab,this%pawrad,this%pawang,this%crystal%xred,&
-& dens_emb,this%can2sub,dim_can,dim_sub,dim_sub,occ,occ_dummy,mo_coeff,&
+& dens_emb,this%can2sub,dim_can,dim_sub,dim_sub,occ,occ_out,mo_coeff,&
 & emb_pot=V_emb)
 
  write(std_out,*) "energy of high-level subsystem imp: ",res_emb%etotal
+
+
+!print wf
+ mcg = this%npwarr(1)*dim_sub
+ ABI_ALLOCATE(cg_sub,(2,mcg))
+ ABI_ALLOCATE(cg_new,(2,mcg))
+ call cgtosub(cg_sub,this%cg,this%npwarr(1),this%can2sub,dim_can,dim_sub)
+ call cgtosub(cg_new,cg_sub,this%npwarr(1),mo_coeff,dim_sub,dim_sub)
+
+ ABI_DEALLOCATE(cg_sub)
+
+ nband_sub=dim_sub
+ hdr%nband = nband_sub
+ hdr%mband = dim_sub
+ ABI_ALLOCATE(eigen,(dim_sub*dtset%nkpt*dtset%nsppol))
+ ABI_ALLOCATE(resid,(dim_sub*dtset%nkpt*dtset%nsppol))
+ eigen=zero; resid=zero
+ call outwf(cg_new,dtset,this%psps,eigen,this%dtfil%fnameabo_impwfk,hdr,this%kg,dtset%kptns,&
+&   dim_sub,mcg,dtset%mkmem,this%mpi_enreg,dtset%mpw,dtset%natom,&
+&   nband_sub,dtset%nkpt,this%npwarr,dtset%nsppol,&
+&   occ_out,resid,0,this%dtfil%unwff2,this%wvl%wfs,this%wvl%descr)
+
+
 
  if (ixc<0) call libxc_functionals_end()
  dtset%ixc = ixc_old
@@ -777,6 +817,7 @@ subroutine post_energy(this,codvsn,dtset,rprim,V_emb,dim_can,dim_sub)
 
  ABI_DEALLOCATE(dens_emb)
  ABI_DEALLOCATE(occ)
+ ABI_DEALLOCATE(mo_coeff)
 
 end subroutine post_energy
 
@@ -924,7 +965,10 @@ subroutine build_subsys(dtset,sub_dtsets,nsubsys)
     enddo
    endif
 
-   call dtset_chkneu(dtset%charge,sub_dtsets(i),dtset%occopt)
+   if(i==1) sub_dtsets(i)%charge = dtset%charge_imp
+   if(i==2) sub_dtsets(i)%charge = dtset%charge_bath
+
+   call dtset_chkneu(sub_dtsets(i)%charge,sub_dtsets(i),dtset%occopt)
 
    write(message,'(2a,i0,a,f10.6)') ch10,"No. of electrons in subsysetem ",i,": ",sub_dtsets(i)%nelect
    call wrtout(std_out,message,'COLL')

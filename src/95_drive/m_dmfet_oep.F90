@@ -32,13 +32,14 @@ module m_dmfet_oep
  use m_crystal,          only : crystal_t
  use m_gstate_sub
  use m_results_gs,       only : results_gs_type,init_results_gs,destroy_results_gs
+ use m_occ,              only : newocc
 
  implicit none
 
  private
 
  public :: oep_init
- public :: oep_run
+! public :: oep_run
  public :: oep_run_split
  public :: destroy_oep
 
@@ -50,10 +51,10 @@ module m_dmfet_oep
    integer,pointer :: opt_algorithm=>null()
    integer,pointer :: nsubsys=>null()
 
-   real(dp),pointer :: P_ref(:,:)=>null()
-   real(dp),pointer :: V_emb(:,:)=>null()
+   real(dp),pointer :: P_ref(:,:,:)=>null()
+   real(dp),pointer :: V_emb(:,:,:)=>null()
 
-   type(coeff2_type),pointer :: P_sub(:)=>null()
+   type(coeff3_type),pointer :: P_sub(:)=>null()
    type(dataset_type),pointer :: sub_dtsets(:)=>null()
 
    real(dp),allocatable :: occ_imp(:),occ_bath(:)
@@ -85,9 +86,9 @@ subroutine oep_init(this,scf_inp,P_ref,P_sub,V_emb,opt_algorithm,sub_dtsets,nsub
  type(gstate_sub_input_var),intent(in),target :: scf_inp
 
  integer,intent(in),target :: opt_algorithm,nsubsys
- real(dp),intent(in),target :: P_ref(scf_inp%dim_sub,scf_inp%dim_sub)
- real(dp),intent(inout),target :: V_emb(scf_inp%dim_sub,scf_inp%dim_sub)
- type(coeff2_type),intent(inout),target :: P_sub(nsubsys)
+ real(dp),intent(in),target :: P_ref(2,scf_inp%dim_sub,scf_inp%dim_sub)
+ real(dp),intent(inout),target :: V_emb(2,scf_inp%dim_sub,scf_inp%dim_sub)
+ type(coeff3_type),intent(inout),target :: P_sub(nsubsys)
  type(dataset_type),intent(inout),target :: sub_dtsets(nsubsys)
 
  !debug
@@ -113,6 +114,13 @@ end subroutine oep_init
 
 subroutine oep_run_split(this,wtol,max_cycle)
 
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'oep_run_split'
+!End of the abilint section
+
  implicit none
 
  type(oep_type),intent(inout) :: this
@@ -124,7 +132,7 @@ subroutine oep_run_split(this,wtol,max_cycle)
  real(dp):: gtol,dist_imp,dist_bath
  character(len=500)::message
  type(results_gs_type),allocatable :: results(:)
- real(dp),allocatable :: P_imp_old(:,:),P_bath_old(:,:)
+ real(dp),allocatable :: P_imp_old(:,:,:),P_bath_old(:,:,:)
 
  dim_can = this%scf_inp%dim_can
  dim_sub = this%scf_inp%dim_sub
@@ -174,8 +182,8 @@ subroutine oep_run_split(this,wtol,max_cycle)
  this%sub_dtsets(1)%nstep = 1
  this%sub_dtsets(2)%nstep = 1
 
- ABI_ALLOCATE(P_imp_old,(dim_sub,dim_sub))
- ABI_ALLOCATE(P_bath_old,(dim_sub,dim_sub))
+ ABI_ALLOCATE(P_imp_old,(2,dim_sub,dim_sub))
+ ABI_ALLOCATE(P_bath_old,(2,dim_sub,dim_sub))
  gtol = 1.0d-5
 
  do iter=1,max_cycle
@@ -234,12 +242,19 @@ end subroutine oep_run_split
 
 subroutine verify_scf(this)
 
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'verify_scf'
+!End of the abilint section
+
  implicit none
 
  type(oep_type),intent(inout) :: this
  integer :: dim_can,dim_sub,dim_all,i
  type(results_gs_type),allocatable :: results(:)
- real(dp),allocatable :: diffP(:,:) 
+ real(dp),allocatable :: diffP(:,:,:) 
 
  dim_can = this%scf_inp%dim_can
  dim_sub = this%scf_inp%dim_sub
@@ -269,7 +284,7 @@ subroutine verify_scf(this)
 &   crystal_tot=this%scf_inp%crystal_tot)
  write(std_out,*) "energy of subsystem bath: ",results(2)%etotal
 
- ABI_ALLOCATE(diffP,(dim_sub,dim_sub))
+ ABI_ALLOCATE(diffP,(2,dim_sub,dim_sub))
  diffP = zero
  do i=1,this%nsubsys
    diffP = diffP + this%P_sub(i)%value
@@ -289,6 +304,13 @@ end subroutine verify_scf
 
 subroutine opt_vemb_fix_fock(this,wtol,max_cycle)
 
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'opt_vemb_fix_fock'
+!End of the abilint section
+
  implicit none
 
  include 'nlopt.f'
@@ -306,7 +328,7 @@ subroutine opt_vemb_fix_fock(this,wtol,max_cycle)
  algorithm = NLOPT_LD_LBFGS !temporarily hard coded
  !algorithm = NLOPT_LD_MMA
  dim_sub = this%scf_inp%dim_sub
- n = dim_sub*(dim_sub+1)/2
+ n = dim_sub*(dim_sub+1)
 
  ABI_ALLOCATE(x,(n))
  call mat2vec(x,this%V_emb,dim_sub)
@@ -337,21 +359,35 @@ end subroutine opt_vemb_fix_fock
 
 subroutine cost_wuyang_fix_fock(f, n, x, grad, need_gradient, this)
 
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'cost_wuyang_fix_fock'
+!End of the abilint section
+
  implicit none
 
  integer n,need_gradient
- integer i,ii, dim_can, dim_sub, dim_all, dim_all_loc
+ integer i,j,ii, dim_can, dim_sub, dim_all, dim_all_loc
  real(dp) :: f, x(n), grad(n), e_imp, e_bath
- real(dp),allocatable :: diffP(:,:), e_sub(:)
+ real(dp),allocatable :: diffP(:,:,:), e_sub(:)
  type(oep_type) :: this
 
  type(results_gs_type),allocatable :: results(:)
  real(dp),allocatable :: eig_imp(:),eig_bath(:)
  complex(dpc),allocatable :: ham_imp(:,:),ham_bath(:,:),dens_mat(:,:),tmp(:,:)
 
+ integer :: nband_sub(1)
+ real(dp) :: nfrozen
+ real(dp) :: entropy_imp,e_fermie_imp,e_entropy_imp
+ real(dp) :: entropy_bath,e_fermie_bath,e_entropy_bath
+ real(dp),allocatable :: doccde(:)
+
  dim_can = this%scf_inp%dim_can
  dim_sub = this%scf_inp%dim_sub
  dim_all = this%scf_inp%dim_all
+
  call vec2mat(x,this%V_emb,dim_sub)
 
  !write(std_out,*) 'Vemb:'
@@ -360,18 +396,53 @@ subroutine cost_wuyang_fix_fock(f, n, x, grad, need_gradient, this)
 
  ABI_ALLOCATE(ham_imp,(dim_sub,dim_sub))
  ABI_ALLOCATE(eig_imp,(dim_sub))
- ham_imp = this%fock_imp + this%V_emb
+ do i=1,dim_sub
+   do j=1,dim_sub
+     ham_imp(i,j) = this%fock_imp(i,j) + cmplx(this%V_emb(1,i,j),this%V_emb(2,i,j),kind=dp)
+   enddo
+ enddo
 
  !write(std_out,*) 'ham_imp'
  !write(std_out,*) ham_imp
  call diag_hermit_mat(ham_imp,eig_imp,dim_sub)
  this%mo_coeff_imp = ham_imp
 
+
+ nband_sub = dim_sub
+ ABI_ALLOCATE(doccde,(dim_sub))
+ doccde = zero
+ if(this%sub_dtsets(1)%occopt>=3.and.this%sub_dtsets(1)%occopt<=8)then
+ call newocc(doccde,eig_imp,entropy_imp,e_fermie_imp,this%sub_dtsets(1)%spinmagntarget,&
+& dim_sub,nband_sub,this%sub_dtsets(1)%nelect,this%sub_dtsets(1)%nkpt,this%sub_dtsets(1)%nspinor,&
+& this%sub_dtsets(1)%nsppol,this%occ_imp,this%sub_dtsets(1)%occopt,this%sub_dtsets(1)%prtvol,&
+& this%sub_dtsets(1)%stmbias,this%sub_dtsets(1)%tphysel,this%sub_dtsets(1)%tsmear,this%sub_dtsets(1)%wtk)
+ endif
+ e_entropy_imp = - this%sub_dtsets(1)%tsmear * entropy_imp
+
  ABI_ALLOCATE(ham_bath,(dim_sub,dim_sub))
  ABI_ALLOCATE(eig_bath,(dim_sub))
- ham_bath = this%fock_bath + this%V_emb
+ do i=1,dim_sub
+   do j=1,dim_sub
+     ham_bath(i,j) = this%fock_bath(i,j) + cmplx(this%V_emb(1,i,j),this%V_emb(2,i,j),kind=dp)
+   enddo
+ enddo
  call diag_hermit_mat(ham_bath,eig_bath,dim_sub)
  this%mo_coeff_bath(1:dim_sub,1:dim_sub) = ham_bath
+
+
+ nfrozen = zero
+ do ii=dim_sub+1,this%scf_inp%dim_all
+   nfrozen = nfrozen + this%occ_bath(ii)
+ enddo
+
+ if(this%sub_dtsets(2)%occopt>=3.and.this%sub_dtsets(2)%occopt<=8)then
+ call newocc(doccde,eig_bath,entropy_bath,e_fermie_bath,this%sub_dtsets(2)%spinmagntarget,&
+& dim_sub,nband_sub,this%sub_dtsets(2)%nelect-nfrozen,this%sub_dtsets(2)%nkpt,this%sub_dtsets(2)%nspinor,&
+& this%sub_dtsets(2)%nsppol,this%occ_bath(1:dim_sub),this%sub_dtsets(2)%occopt,this%sub_dtsets(2)%prtvol,&
+& this%sub_dtsets(2)%stmbias,this%sub_dtsets(2)%tphysel,this%sub_dtsets(2)%tsmear,this%sub_dtsets(2)%wtk)
+ endif
+ e_entropy_bath = - this%sub_dtsets(2)%tsmear * entropy_bath
+ ABI_DEALLOCATE(doccde)
 
  !imp
  !write(std_out,*) 'occ_imp'
@@ -385,17 +456,25 @@ subroutine cost_wuyang_fix_fock(f, n, x, grad, need_gradient, this)
  ABI_ALLOCATE(tmp,(dim_sub,dim_sub))
  call zgemm('N','C',dim_sub,dim_sub,dim_sub,cone,dens_mat,dim_sub,ham_imp,dim_sub,czero,tmp,dim_sub)
  call zgemm('N','N',dim_sub,dim_sub,dim_sub,cone,ham_imp,dim_sub,tmp,dim_sub,czero,dens_mat,dim_sub)
- ABI_DEALLOCATE(tmp)
 
  if(maxval(abs(aimag(dens_mat)))>tol8) then
    MSG_WARNING('Density matrix is not real!')
    write(std_out,*) "max abs imaginary element:", maxval(abs(aimag(dens_mat)))
  endif
 
- e_imp = real(trace_dot_cmplx(this%fock_imp+this%V_emb,dens_mat,dim_sub),kind=dp)
- this%P_sub(1)%value = real(dens_mat,kind=dp)
+ do i=1,dim_sub
+   do j=1,dim_sub
+     tmp(i,j) = this%fock_imp(i,j) + cmplx(this%V_emb(1,i,j),this%V_emb(2,i,j),kind=dp)
+   enddo
+ enddo
+ e_imp = real(trace_dot_cmplx(tmp,dens_mat,dim_sub),kind=dp) + e_entropy_imp
+ this%P_sub(1)%value(1,:,:) = real(dens_mat,kind=dp)
+ this%P_sub(1)%value(2,:,:) = zero
+ if(maxval(abs(aimag(dens_mat)))>tol8) then
+   this%P_sub(1)%value(2,:,:) = aimag(dens_mat)
+ endif
  ABI_DEALLOCATE(dens_mat)
-
+ ABI_DEALLOCATE(tmp)
 
  !bath
  !write(std_out,*) 'occ_bath'
@@ -409,37 +488,52 @@ subroutine cost_wuyang_fix_fock(f, n, x, grad, need_gradient, this)
  ABI_ALLOCATE(tmp,(dim_sub,dim_sub))
  call zgemm('N','C',dim_sub,dim_sub,dim_sub,cone,dens_mat,dim_sub,ham_bath,dim_sub,czero,tmp,dim_sub)
  call zgemm('N','N',dim_sub,dim_sub,dim_sub,cone,ham_bath,dim_sub,tmp,dim_sub,czero,dens_mat,dim_sub)
- ABI_DEALLOCATE(tmp)
 
  if(maxval(abs(aimag(dens_mat)))>tol8) then
    MSG_WARNING('Density matrix is not real!')
    write(std_out,*) "max abs imaginary element:", maxval(abs(aimag(dens_mat)))
  endif
 
- e_bath = real(trace_dot_cmplx(this%fock_bath+this%V_emb,dens_mat,dim_sub),kind=dp)
- this%P_sub(2)%value = real(dens_mat,kind=dp)
+ do i=1,dim_sub
+   do j=1,dim_sub
+     tmp(i,j) = this%fock_bath(i,j) + cmplx(this%V_emb(1,i,j),this%V_emb(2,i,j),kind=dp)
+   enddo
+ enddo
+ e_bath = real(trace_dot_cmplx(tmp,dens_mat,dim_sub),kind=dp) + e_entropy_bath
+ this%P_sub(2)%value(1,:,:) = real(dens_mat,kind=dp)
+ this%P_sub(2)%value(2,:,:) = zero
+ if(maxval(abs(aimag(dens_mat)))>tol8) then
+   this%P_sub(2)%value(2,:,:) = aimag(dens_mat)
+ endif
  ABI_DEALLOCATE(dens_mat)
+ ABI_DEALLOCATE(tmp)
 
  !objective function
  f = e_imp + e_bath
  f = f - trace_dot(this%P_ref,this%V_emb,dim_sub)
-
  write(std_out,*) "objective function value:", f
 
  f = -1.0_dp*f
+
+ write(std_out,*) "V*diffP=", trace_dot(this%P_sub(1)%value+this%P_sub(2)%value-this%P_ref,this%V_emb,dim_sub)
 
 
  !gradient
  if (need_gradient.ne.0) then
    !compute gradient
-   ABI_ALLOCATE(diffP,(dim_sub,dim_sub))
+   ABI_ALLOCATE(diffP,(2,dim_sub,dim_sub))
    diffP = zero
    do i=1,this%nsubsys
      diffP = diffP + this%P_sub(i)%value
    enddo
    diffP = diffP - this%P_ref
+   if(maxval(abs(diffP(2,:,:))) < tol8) then
+     diffP(2,:,:) = zero
+   endif
    !write(std_out,*) 'diffP'
    !write(std_out,*) diffP
+   call mat_trans(diffP,dim_sub)
+   diffP(2,:,:) = -1.0_dp*diffP(2,:,:)
    call mat2vec(grad,diffP,dim_sub)
    grad = -1.0_dp*grad
    write(std_out,*) "max component of gradient:", maxval(abs(grad))
@@ -449,8 +543,37 @@ subroutine cost_wuyang_fix_fock(f, n, x, grad, need_gradient, this)
 end subroutine cost_wuyang_fix_fock
 
 
+subroutine mat_trans(mat,n)
+
+ implicit none
+
+ integer,intent(in):: n
+ real(dp),intent(inout) :: mat(2,n,n)
+ real(dp),allocatable :: tmp(:,:,:)
+ integer::i,j
+
+ ABI_ALLOCATE(tmp,(2,n,n))
+ tmp = mat
+
+ do i=1,n
+   do j=1,n
+     mat(:,i,j) = tmp(:,j,i)
+   enddo
+ enddo
+
+ ABI_DEALLOCATE(tmp)
+
+end subroutine mat_trans
+
 
 subroutine diag_hermit_mat(mat,w,dim)
+
+
+!This section has been created automatically by the script Abilint (TD).
+!Do not modify the following lines by hand.
+#undef ABI_FUNC
+#define ABI_FUNC 'diag_hermit_mat'
+!End of the abilint section
 
  implicit none
  
@@ -473,7 +596,7 @@ subroutine diag_hermit_mat(mat,w,dim)
 
 end subroutine diag_hermit_mat
 
-
+#if 0
 subroutine oep_run(this,wtol,max_cycle)
 
 
@@ -526,7 +649,7 @@ subroutine oep_run(this,wtol,max_cycle)
  call nlo_destroy(opt)
 
 end subroutine oep_run
-
+#endif
 
 subroutine mat2vec(vec,mat,n)
 
@@ -540,15 +663,16 @@ subroutine mat2vec(vec,mat,n)
  implicit none
 
  integer,intent(in) :: n
- real(dp),intent(in) :: mat(n,n)
- real(dp),intent(out) :: vec(n*(n+1)/2)
+ real(dp),intent(in) :: mat(2,n,n)
+ real(dp),intent(out) :: vec(n*(n+1))
  integer :: i,j,k
 
  k=1
  do j=1,n
    do i=j,n
-     vec(k) = mat(i,j) !lower triangle
-     k=k+1
+     vec(k) = mat(1,i,j) !lower triangle
+     vec(k+1) = mat(2,i,j)
+     k=k+2
    enddo
  enddo
 
@@ -567,16 +691,21 @@ subroutine vec2mat(vec,mat,n)
  implicit none
 
  integer,intent(in) :: n
- real(dp),intent(out) :: mat(n,n)
- real(dp),intent(in) :: vec(n*(n+1)/2)
+ real(dp),intent(out) :: mat(2,n,n)
+ real(dp),intent(in) :: vec(n*(n+1))
  integer :: i,j,k
 
  k=1
  do j=1,n
    do i=j,n
-     mat(i,j) = vec(k) !lower triangle
-     mat(j,i) = mat(i,j)
-     k=k+1
+     mat(1,i,j) = vec(k) !lower triangle
+     mat(2,i,j) = vec(k+1)
+     if(i==j) mat(2,i,j) = zero
+     if(i/=j)then
+       mat(1,j,i) = mat(1,i,j)
+       mat(2,j,i) = -mat(2,i,j)
+     endif
+     k=k+2
    enddo
  enddo
 
@@ -595,14 +724,14 @@ function trace_dot(A,B,n) result(trace)
  implicit none
 
  integer,intent(in) :: n
- real(dp),intent(in) :: A(n,n), B(n,n)
+ real(dp),intent(in) :: A(2,n,n), B(2,n,n)
  real(dp) :: trace
  integer :: i,j
 
  trace = 0.0_dp
  do i=1,n
    do j=1,n
-     trace = trace + A(i,j)*B(j,i)
+     trace = trace + A(1,i,j)*B(1,j,i) - A(2,i,j)*B(2,j,i) 
    enddo
  enddo 
 
@@ -614,7 +743,7 @@ function trace_dot_cmplx(A,B,n) result(trace)
 !This section has been created automatically by the script Abilint (TD).
 !Do not modify the following lines by hand.
 #undef ABI_FUNC
-#define ABI_FUNC 'trace_dot'
+#define ABI_FUNC 'trace_dot_cmplx'
 !End of the abilint section
 
  implicit none
@@ -634,7 +763,7 @@ function trace_dot_cmplx(A,B,n) result(trace)
 end function trace_dot_cmplx
 
 
-
+#if 0
 subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
 
 
@@ -728,7 +857,7 @@ subroutine cost_wuyang(f, n, x, grad, need_gradient, this)
 
  
 end subroutine cost_wuyang
-
+#endif
 
 
 subroutine destroy_oep(this)

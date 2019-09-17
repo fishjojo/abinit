@@ -151,8 +151,8 @@ module m_subscf
    complex(dpc),pointer :: subham_sub(:,:) => null()
    complex(dpc),pointer :: fock_mat(:,:) => null()
 
-   real(dp), pointer :: dens_mat_real(:,:) => null()
-   real(dp), pointer :: emb_pot(:,:) => null()
+   real(dp), pointer :: dens_mat_real(:,:,:) => null()
+   real(dp), pointer :: emb_pot(:,:,:) => null()
 
    type(results_gs_type),pointer :: results_gs => null()
    logical :: has_embpot,save_fock_mat
@@ -234,8 +234,8 @@ subroutine subscf_init(this,dtfil,dtset,psps,results_gs,crystal,nfftf,&
  real(dp),intent(in),target :: ylmgr(dtset%mpw*dtset%mkmem,3,psps%mpsang*psps%mpsang*psps%useylm)
  real(dp),intent(inout),target :: cg(2,mcg),ecore
  real(dp),intent(in),target :: rhor(nfftf,dtset%nspden),rhog(2,nfftf)
- real(dp),intent(in),target :: dens_mat_real(dim_sub,dim_sub)
- real(dp),intent(in),target, optional :: emb_pot(dim_sub,dim_sub)
+ real(dp),intent(in),target :: dens_mat_real(2,dim_sub,dim_sub)
+ real(dp),intent(in),target, optional :: emb_pot(2,dim_sub,dim_sub)
  complex(dpc),intent(inout),target,optional :: fock_mat(dim_sub,dim_sub),subham_sub(dim_all,dim_all)
 
  type(pawrhoij_type), intent(in),target :: pawrhoij(my_natom*psps%usepaw)
@@ -1906,7 +1906,11 @@ subroutine subscf_vtorho(this,dtset,psps,crystal,mpi_enreg,dtfil,istep,compch_ff
  endif
  ABI_DEALLOCATE(tmp_img)
 
- this%dens_mat_real = real(dens_mat,kind=dp)
+ this%dens_mat_real(1,:,:) = real(dens_mat,kind=dp)
+ this%dens_mat_real(2,:,:) = zero
+ if(maxval(abs(aimag(dens_mat))) > tol8) then
+   this%dens_mat_real(2,:,:) = aimag(dens_mat)
+ endif
  ABI_DEALLOCATE(dens_mat)
 
 !get cg_new
@@ -2117,6 +2121,9 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,ikpt,my_nspinor,subham_sub,
  do iband1=1,nband_k
    do iband2=1,iband1
      if(iband2/=iband1)then
+       !if(abs(subham(isubh+1))>tol8)then
+       !  write(std_out,*) 'complex H:', subham(isubh+1)
+       !endif
        subham_sub(iband2,iband1)=cmplx(subham(isubh),subham(isubh+1),kind=dp)
        subham_sub(iband1,iband2)=cmplx(subham(isubh),-subham(isubh+1),kind=dp)
      else
@@ -2141,7 +2148,16 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,ikpt,my_nspinor,subham_sub,
        this%fock_mat(iband1,iband2) = subham_sub(iband1,iband2)
      enddo
    enddo
+
+   if(maxval(abs(aimag(this%fock_mat))) < tol8) then
+     do iband1=1,nband_k
+       do iband2=1,nband_k
+         this%fock_mat(iband1,iband2) = cmplx(real(this%fock_mat(iband1,iband2)),kind=dp)
+       enddo
+     enddo
+   endif
  endif
+
 
  !write(std_out,*) 'fock_mat'
  !write(std_out,*) this%fock_mat
@@ -2149,7 +2165,8 @@ subroutine subscf_mkham(this,dtset,mpi_enreg,gs_hamk,ikpt,my_nspinor,subham_sub,
  if(this%has_embpot) then
    do iband1=1,nband_k
      do iband2=1,nband_k
-       subham_sub(iband1,iband2) = subham_sub(iband1,iband2)+cmplx(this%emb_pot(iband1,iband2),kind=dp)
+       subham_sub(iband1,iband2) = subham_sub(iband1,iband2) &
+&        +cmplx(this%emb_pot(1,iband1,iband2),this%emb_pot(2,iband1,iband2),kind=dp)
      enddo
    enddo
  endif

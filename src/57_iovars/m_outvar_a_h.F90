@@ -460,6 +460,12 @@ subroutine outvar_a_h (choice,dmatpuflag,dtsets,iout,&
  dprarr(1,:)=dtsets(:)%charge
  call prttagm(dprarr,intarr,iout,jdtset_,1,marr,1,narrm,ncid,ndtset_alloc,'charge','DPR',0)
 
+ dprarr(1,:)=dtsets(:)%charge_imp
+ call prttagm(dprarr,intarr,iout,jdtset_,1,marr,1,narrm,ncid,ndtset_alloc,'charge_imp','DPR',0)
+
+ dprarr(1,:)=dtsets(:)%charge_bath
+ call prttagm(dprarr,intarr,iout,jdtset_,1,marr,1,narrm,ncid,ndtset_alloc,'charge_bath','DPR',0)
+
 !chempot
  narr=3*mxvals%nzchempot*mxvals%ntypat ! default size for all datasets
  if(narr/=0)then

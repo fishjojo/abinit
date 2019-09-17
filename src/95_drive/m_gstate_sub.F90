@@ -199,7 +199,7 @@ subroutine gstate_sub(codvsn,acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,w
  real(dp),intent(in) :: cg(2,*)
 
  real(dp),intent(in) :: sub_occ(dim_all)
- real(dp), intent(inout) :: dens(dim_sub,dim_sub),rprim(3,3)
+ real(dp), intent(inout) :: dens(2,dim_sub,dim_sub),rprim(3,3)
  real(dp), intent(inout) :: occ(dim_all*dtset%nkpt*dtset%nsppol)
  real(dp), intent(in), optional :: emb_pot(dim_sub,dim_sub)
 
@@ -253,11 +253,12 @@ subroutine gstate_sub(codvsn,acell,dtset,psps,rprim,results_gs,mpi_enreg,dtfil,w
  type(pawrhoij_type),pointer :: pawrhoij(:)
  type(pawcprj_type),allocatable :: cprj(:,:)
 
- DBG_ENTER("COLL")
 
 !debug
  integer,save :: icalled = 0
  type(crystal_t),intent(in),optional ::crystal_tot
+
+
  icalled = icalled + 1
 
 !check compatability

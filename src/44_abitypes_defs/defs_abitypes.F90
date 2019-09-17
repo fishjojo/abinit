@@ -677,6 +677,8 @@ type dataset_type
  real(dp) :: cd_halfway_freq
  real(dp) :: cd_max_freq
  real(dp) :: charge
+ real(dp) :: charge_imp !Xing
+ real(dp) :: charge_bath !Xing
  real(dp) :: cpus
  real(dp) :: ddamp
  real(dp) :: dfpt_sciss

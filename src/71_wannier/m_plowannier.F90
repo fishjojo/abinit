@@ -2940,7 +2940,7 @@ subroutine oper_to_matrix(wan,operwan,mat)
 
   type(operwan_type),intent(in) :: operwan(:,:,:)
   type(plowannier_type), intent(in) :: wan
-  real(dp), intent(out) :: mat(:,:,:,:)
+  complex(dpc), intent(out) :: mat(:,:,:,:)
 
   integer :: isppol,ikpt,index_l,iatom1,il1,im1,index_c,iatom2,il2,im2
 
@@ -2957,7 +2957,7 @@ subroutine oper_to_matrix(wan,operwan,mat)
              do iatom2 = 1,wan%natom_wan
                do il2 = 1,wan%nbl_atom_wan(iatom2)
                  do im2 = 1,2*wan%latom_wan(iatom2)%lcalc(il2)+1
-                   mat(index_l,index_c,ikpt,isppol) = real(operwan(ikpt,iatom1,iatom2)%atom(il1,il2)%matl(im1,im2,isppol,1,1))
+                   mat(index_l,index_c,ikpt,isppol) = operwan(ikpt,iatom1,iatom2)%atom(il1,il2)%matl(im1,im2,isppol,1,1)
                    index_c = index_c + 1
                  end do !im2
                end do !il2
@@ -3054,9 +3054,9 @@ subroutine get_can2sub(wan,dm_wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub
   type(plowannier_type), intent(in) :: wan
   integer, intent(in) :: ikpt,nband
   integer,intent(inout) :: dim_imp,dim_sub,dim_all
-  real(dp),intent(in) :: occ(:),dm_wan(:,:,:,:)
+  real(dp),intent(in) :: occ(:)
   real(dp),intent(inout) :: sub_occ(nband)
-  complex(dpc),intent(inout) :: can2sub(nband,nband)
+  complex(dpc),intent(inout) :: can2sub(nband,nband), dm_wan(:,:,:,:)
 
   integer :: dim_bath
   integer :: i,j,ioff,icount
@@ -3067,7 +3067,7 @@ subroutine get_can2sub(wan,dm_wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub
   real(dp) :: tmp1
   real(dp), allocatable :: imp_occ(:), bath_occ(:), rwork(:)
   real(dp), allocatable :: imp_occ_srt(:),bath_occ_srt(:)
-  real(dp), allocatable :: dm_wan_copy(:,:),loc2sub_imp(:,:)
+  complex(dpc),allocatable :: dm_wan_copy(:,:), loc2sub_imp(:,:)
 
   complex(dpc),allocatable :: Vij(:,:,:),Vij_copy(:,:,:),VTV(:,:,:)
   complex(dpc),allocatable :: U_imp(:,:), U_bath(:,:)
@@ -3087,10 +3087,12 @@ subroutine get_can2sub(wan,dm_wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub
   ABI_ALLOCATE(dm_wan_copy,(dim_imp,dim_imp))
   dm_wan_copy = dm_wan(:,:,1,1)
 
-  lwork = 6*dim_imp
-  ABI_ALLOCATE(rwork,(lwork))
-  call dsyev ('V','L',dim_imp,dm_wan_copy,dim_imp,imp_occ,rwork,lwork,info)
+  ABI_ALLOCATE(rwork,(3*dim_imp-2))
+  lwork = 65*dim_imp !Value to optimize the diagonalization
+  ABI_ALLOCATE(zwork,(lwork))
+  call zheev ('v','u',dim_imp,dm_wan_copy,dim_imp,imp_occ,zwork,lwork,rwork,info)
   ABI_DEALLOCATE(rwork)
+  ABI_DEALLOCATE(zwork)
 
   !remove numerical noise
   do i=1,dim_imp
@@ -3113,13 +3115,13 @@ subroutine get_can2sub(wan,dm_wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub
 
   !remove rounding error
   do i=1,dim_imp
-    if(abs(imp_occ_srt(i)-2.0_dp)<tol8) imp_occ_srt(i)=2.0_dp
+    if(abs(imp_occ_srt(i)-2.0_dp)<tol14) imp_occ_srt(i)=2.0_dp
   enddo
 
   write(message,'(2a)') ch10," imp_occ:"
   call wrtout(std_out,message,'COLL')
   do i=1,dim_imp
-    write(message,'(f14.10)') imp_occ_srt(i)
+    write(message,'(f20.15)') imp_occ_srt(i)
     call wrtout(std_out,message,'COLL')
   enddo
   ABI_DEALLOCATE(imp_occ)
@@ -3259,11 +3261,11 @@ subroutine get_can2sub(wan,dm_wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub
   enddo
 
   ioff = dim_imp + 1
-  if(bath_occ(ioff-1) > tol8) MSG_ERROR("Something is wrong!")
+  if(bath_occ(ioff-1) > tol14) MSG_ERROR("Something is wrong!")
 
   icount = 0
   do i=ioff,nband
-    if(bath_occ(i) < tol8 ) icount = icount + 1  !remove empty states
+    if(bath_occ(i) < tol14 ) icount = icount + 1  !remove empty states
   enddo
   ioff = ioff + icount
 
@@ -3283,13 +3285,13 @@ subroutine get_can2sub(wan,dm_wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub
 
   !remove rounding error
   do i=1,dim_bath
-    if(abs(bath_occ_srt(i)-2.0_dp)<tol8) bath_occ_srt(i)=2.0_dp
+    if(abs(bath_occ_srt(i)-2.0_dp)<tol14) bath_occ_srt(i)=2.0_dp
   enddo
 
   write(message,'(2a)') ch10," bath_occ:"
   call wrtout(std_out,message,'COLL')
   do i=1,dim_bath
-    write(message,'(f14.10)') bath_occ_srt(i)
+    write(message,'(f20.15)') bath_occ_srt(i)
     call wrtout(std_out,message,'COLL')
   enddo 
 
@@ -3383,14 +3385,21 @@ subroutine get_can2sub(wan,dm_wan,ikpt,occ,nband,can2sub,sub_occ,dim_imp,dim_sub
   call wrtout(std_out,message,'COLL')
 
   dim_sub = 0
-  do i=1,min(dim_imp,dim_bath)
-    tmp1 = imp_occ_srt(i) + bath_occ_srt(i)
-    if(imp_occ_srt(i)>tol8.and.tmp1<2.02.and.tmp1>1.98) then !a pair of entangled orbitals
-       dim_sub = dim_sub + 1
-    else
-       exit
-    endif
+!  do i=1,min(dim_imp,dim_bath)
+!    tmp1 = imp_occ_srt(i) + bath_occ_srt(i)
+!    if(imp_occ_srt(i)>tol8.and.tmp1<2.02.and.tmp1>1.98) then !a pair of entangled orbitals
+!       dim_sub = dim_sub + 1
+!    else
+!       exit
+!    endif
+!  enddo
+
+! include all fractionally occupied bath orbitals
+  do i=1,dim_bath
+    if(abs(bath_occ_srt(i)-2.0)<tol14) exit
+    dim_sub = dim_sub + 1
   enddo
+
   dim_sub = dim_sub + dim_imp
 
   sub_occ = zero
@@ -3573,8 +3582,8 @@ subroutine canonical_to_sub(wan,loc2sub,can2sub,nsub,ikpt,isppol)
   implicit none
 
   type(plowannier_type), intent(in) :: wan
-  real(dp),intent(in) :: loc2sub(:,:)
   integer,intent(in) :: nsub, ikpt, isppol
+  complex(dpc),intent(in) :: loc2sub(:,:)
   complex(dpc),intent(out) :: can2sub(:,:)
 
   integer :: iband1,isub,index_l,iatom1,il1,im1,nband
